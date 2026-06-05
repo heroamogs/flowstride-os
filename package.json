@@ -2,10 +2,13 @@
   "name": "flowstride-os",
   "version": "1.0.0",
   "description": "An opensource flowfirst test automation framework",
-  "private": true,
   "workspaces": [
-    "packages/*",
-    "docs"
+    "packages/*"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
   ],
   "bin": {
     "flowstride": "dist/cli/index.js"
@@ -14,14 +17,13 @@
     "build": "tsc",
     "flowstride": "node ./dist/cli/index.js",
     "test": "echo 'Test script to be configured'",
-    "docs:dev": "npm run dev --workspace=docs",
-    "docs:build": "npm run build --workspace=docs",
-    "docs:preview": "npm run preview --workspace=docs"
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "automation",
     "testing",
-    "qa"
+    "qa",
+    "flowstride"
   ],
   "author": "Samuel Okolo",
   "license": "MIT",
@@ -48,6 +50,5 @@
   },
   "optionalDependencies": {
     "@rolldown/binding-darwin-arm64": "^0.15.1"
-  },
-  "main": "index.js"
+  }
 }
