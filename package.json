@@ -1,5 +1,5 @@
 {
-  "name": "flowstride-os",
+  "name": "flowstride",
   "version": "1.0.0",
   "description": "An opensource flowfirst test automation framework",
   "workspaces": [
