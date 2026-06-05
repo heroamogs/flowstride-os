@@ -1,0 +1,53 @@
+{
+  "name": "flowstride-os",
+  "version": "1.0.0",
+  "description": "An opensource flowfirst test automation framework",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "docs"
+  ],
+  "bin": {
+    "flowstride": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "flowstride": "node ./dist/cli/index.js",
+    "test": "echo 'Test script to be configured'",
+    "docs:dev": "npm run dev --workspace=docs",
+    "docs:build": "npm run build --workspace=docs",
+    "docs:preview": "npm run preview --workspace=docs"
+  },
+  "keywords": [
+    "automation",
+    "testing",
+    "qa"
+  ],
+  "author": "Samuel Okolo",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^11.0.0",
+    "dotenv": "^17.4.2",
+    "open": "^11.0.0",
+    "ora": "^5.4.1",
+    "playwright": "^1.59.1",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "ts-node": "^10.9.2",
+    "undici": "^7.25.0",
+    "ws": "^8.20.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.3"
+  },
+  "optionalDependencies": {
+    "@rolldown/binding-darwin-arm64": "^0.15.1"
+  },
+  "main": "index.js"
+}

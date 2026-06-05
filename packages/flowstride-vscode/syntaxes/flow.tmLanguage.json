@@ -1,0 +1,95 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Flowstride",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#keywords" },
+    { "include": "#strings" },
+    { "include": "#commands" },
+    { "include": "#variables" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "match": "//.*",
+          "name": "comment.line.double-slash.flow"
+        },
+        {
+          "begin": "/\\*",
+          "end": "\\*/",
+          "name": "comment.block.flow"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "match": "\\b(Feature|Scenario|Given|When|Then|And)\\b",
+          "name": "keyword.control.flow"
+        },
+        {
+          "match": "\\b(let)\\b",
+          "name": "keyword.declaration.flow"
+        }
+      ]
+    },
+    "commands": {
+      "patterns": [
+        {
+          "match": "\\b(flow\\.[a-zA-Z0-9_.]+)\\b",
+          "name": "entity.name.function.flow"
+        },
+        {
+          "match": "\\b(extract|resBody|resHeader|reqBody|reqHeader|cookie|status|visible|text|value|attribute|transcript)\\b",
+          "name": "support.constant.flow"
+        },
+        {
+          "match": "\\b(button|link|a|input|field|div|span|image|img)\\b",
+          "name": "entity.name.tag.flow"
+        },
+        {
+          "match": "\\b(near|above|under|below|leftOf|rightOf|inside|in|next|previous)\\b",
+          "name": "keyword.operator.spatial.flow"
+        },
+        {
+          "match": "\\b(into|with|as|equals|lessThan|greaterThan|via|to\\.be|to\\.not\\.be|is|is\\.not|type\\.of|format|matches|length|includes|has\\.key)\\b",
+          "name": "keyword.operator.logical.flow"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "begin": "\"\"\"",
+          "end": "\"\"\"",
+          "name": "string.quoted.triple.flow"
+        },
+        {
+          "begin": "\"",
+          "end": "\"",
+          "name": "string.quoted.double.flow",
+          "patterns": [
+            {
+              "match": "\\{\\{env\\.[a-zA-Z0-9_]+\\}\\}",
+              "name": "variable.language.env.flow"
+            },
+            {
+              "match": "[@$][a-zA-Z0-9_]+",
+              "name": "variable.other.flow"
+            }
+          ]
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "match": "[@$][a-zA-Z0-9_]+",
+          "name": "variable.other.flow"
+        }
+      ]
+    }
+  },
+  "scopeName": "source.flow"
+}

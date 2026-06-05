@@ -1,0 +1,19 @@
+{
+  "name": "docs",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview"
+  },
+  "keywords": [],
+  "author": "Samuel Okolo",
+  "license": "MIT",
+  "description": "Official documentation site for Flowstride test automation framework",
+  "devDependencies": {
+    "vitepress": "^1.6.4",
+    "vue": "^3.5.35"
+  }
+}

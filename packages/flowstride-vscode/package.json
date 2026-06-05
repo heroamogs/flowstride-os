@@ -1,0 +1,86 @@
+{
+  "name": "flowstride-vscode",
+  "displayName": "Flowstride Automation",
+  "description": "Official VS Code extension for Flowstride. Includes syntax highlighting, error diagnostics, IntelliSense, and interactive test runner.",
+  "version": "1.0.0",
+  "publisher": "flowstride",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Testing",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:flow"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configurationDefaults": {
+      "[flow]": {
+        "editor.quickSuggestions": {
+          "other": true,
+          "comments": false,
+          "strings": true
+        },
+        "editor.formatOnSave": true
+      }
+    },
+    "languages": [
+      {
+        "id": "flow",
+        "aliases": [
+          "Flowstride",
+          "flow"
+        ],
+        "extensions": [
+          ".flow"
+        ],
+        "icon": {
+          "light": "./images/flow-icon.svg",
+          "dark": "./images/flow-icon.svg"
+        },
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "flow",
+        "scopeName": "source.flow",
+        "path": "./syntaxes/flow.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "flow",
+        "path": "./snippets/flow.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "flowstride.runTest",
+        "title": "Run Test",
+        "icon": "$(play)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "flowstride.runTest",
+          "when": "resourceLangId == flow",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
+  }
+}

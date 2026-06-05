@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "outDir": "./dist",
+    "rootDir": "src" /* Change this from "." to "src" */,
+    "types": ["node"],
+    "paths": {
+      "@flowstride/core": ["./packages/flowstride_core/src"],
+      "@flowstride/cli": ["./packages/flowstride_cli/src"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "src/ui", "dist", "example_project", "packages/flowstride_report"]
+}

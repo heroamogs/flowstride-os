@@ -1,0 +1,106 @@
+{
+  "stats": {
+    "total": 9,
+    "passed": 3,
+    "failed": 2,
+    "skipped": 4
+  },
+  "files": [
+    {
+      "path": "/Users/samuelokolo/Desktop/flow-demo/flows/qacar.flow",
+      "scenarios": [
+        {
+          "name": "Navigate to Registration Page",
+          "status": "FAIL",
+          "duration": 31199,
+          "error": "Element \"h1:has-text('Register')\" was not visible within timeout.",
+          "steps": [
+            {
+              "id": "S1",
+              "screen": "/register",
+              "action": "Maps to https://www.qacar.online/register",
+              "expected": "Action should complete successfully",
+              "actual": "Action performed successfully",
+              "status": "PASS"
+            },
+            {
+              "id": "S2",
+              "screen": "/register",
+              "action": "Verify visibility of: h1:has-text('Register')",
+              "expected": "Requirement: expect VISIBLE h1:has-text('Register')",
+              "actual": "Element \"h1:has-text('Register')\" was not visible within timeout.",
+              "status": "FAIL",
+              "screenshot": "screenshots/fail_s2_1778422050252.png"
+            }
+          ]
+        },
+        {
+          "name": "Fill Registration Form",
+          "status": "FAIL",
+          "duration": 61478,
+          "error": "locator.clear: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[placeholder=\\'dd/mm/yyyy\\']')\u001b[22m\n",
+          "steps": [
+            {
+              "id": "S1",
+              "screen": "/register",
+              "action": "Type \"Jane\" into input[placeholder='First Name']",
+              "expected": "Action should complete successfully",
+              "actual": "Action performed successfully",
+              "status": "PASS"
+            },
+            {
+              "id": "S2",
+              "screen": "/register",
+              "action": "Type \"Doe\" into input[placeholder='Last Name']",
+              "expected": "Action should complete successfully",
+              "actual": "Action performed successfully",
+              "status": "PASS"
+            },
+            {
+              "id": "S3",
+              "screen": "/register",
+              "action": "Type \"15/08/1995\" into input[placeholder='dd/mm/yyyy']",
+              "expected": "Action should complete successfully",
+              "actual": "locator.clear: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[placeholder=\\'dd/mm/yyyy\\']')\u001b[22m\n",
+              "status": "FAIL",
+              "screenshot": "screenshots/fail_s3_1778422111669.png"
+            },
+            {
+              "id": "S4",
+              "screen": "/register",
+              "action": "Type \"jane.doe@flowstride.com\" into input[placeholder='Email']",
+              "expected": "Action should complete successfully",
+              "actual": "Not executed",
+              "status": "NOT TESTED"
+            },
+            {
+              "id": "S5",
+              "screen": "/register",
+              "action": "Type \"SecurePass123!\" into input[placeholder='Password']",
+              "expected": "Action should complete successfully",
+              "actual": "Not executed",
+              "status": "NOT TESTED"
+            },
+            {
+              "id": "S6",
+              "screen": "/register",
+              "action": "Click element: button:has-text('Register')",
+              "expected": "Action should complete successfully",
+              "actual": "Not executed",
+              "status": "NOT TESTED"
+            },
+            {
+              "id": "S7",
+              "screen": "/register",
+              "action": "Verify visibility of: .dashboard-welcome-banner",
+              "expected": "Requirement: expect VISIBLE .dashboard-welcome-banner",
+              "actual": "Not executed",
+              "status": "NOT TESTED"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "duration": 93269
+}

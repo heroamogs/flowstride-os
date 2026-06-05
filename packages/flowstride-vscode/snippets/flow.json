@@ -1,0 +1,12 @@
+{
+  "Feature Block": {
+    "prefix": "Fea",
+    "body": "Feature: ${1:Title}",
+    "description": "Create a new Feature block"
+  },
+  "Scenario Block": {
+    "prefix": "Sce",
+    "body": "Scenario: ${1:Description}\n  Given \"${2:Initial condition}\"",
+    "description": "Create a new Scenario block"
+  }
+}
