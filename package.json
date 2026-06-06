@@ -1,6 +1,6 @@
 {
   "name": "flowstride",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "An opensource flowfirst test automation framework",
   "workspaces": [
     "packages/*"
@@ -8,7 +8,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "src/ui/dist"
   ],
   "bin": {
     "flowstride": "dist/cli/index.js"

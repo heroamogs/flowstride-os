@@ -1,11 +1,8 @@
 # Dependencies
 node_modules/
 
-# flowstride-os:
-
-
 # Production Builds & Compiled Code
-dist/
+/dist/
 out/
 build/
 *.tsbuildinfo
@@ -35,11 +32,6 @@ yarn-error.log*
 *.vsix
 .vscode-test/
 
-# npm pack tarballs
-*.tgz
-
-# Compiled UI Dashboard
-src/ui/dist/
 
 # OS Generated Files
 .DS_Store
