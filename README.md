@@ -1,4 +1,4 @@
-# Flowstride OS
+# Flowstride
 
 **The next-generation, BDD-flavored End-to-End Testing Framework.**
 
@@ -22,17 +22,30 @@ Traditional E2E frameworks force you to choose between highly technical code (wh
 Flowstride requires Node.js 18 or higher.
 
 **1. Install globally (or as a dev dependency in your project):**
+
+```bash
 npm install -g flowstride
+```
 
 **2. Initialize a new Flowstride workspace:**
-flowstride init
 
-_(This creates the default directory structure (`/flows`, `/reports`, `/plugins`) and generates a `welcome.flow` sample file.)_
+```bash
+flowstride init
+```
+
+_(This creates the default directory structure (`/flows`, `/reports`, `/plugins`) and generates a `example.flow` sample file.)_
 
 **3. Run your first test:**
-flowstride run flows/welcome.flow
 
-_(This command executes your test while instantly booting up the local Flowstride Dashboard on `http://localhost:5173`.)_
+```bash
+flowstride run
+
+OR
+
+flowstride run flows/example.flow
+```
+
+_(This command executes your test while instantly booting up the local Flowstride Dashboard.)_
 
 ---
 
