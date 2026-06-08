@@ -71,9 +71,19 @@ For teams using Flowstride Enterprise to aggregate multi-flow metrics, we mainta
 
 - **Metadata, Not Payloads:** When cloud sync is active, Flowstride routes only execution metadata to your team's dashboard (e.g., Workspace ID, execution duration, total steps, and pass/fail tallies). **Zero bytes** of request headers, bearer tokens, or JSON bodies are ever transmitted to Flowstride Cloud.
 
-- **Deep Debugging Stays Local:** The rich, interactive visual dashboard—including the JSON explorer and API Replay tools—runs on a dynamic, locally bound port on your machine. You get the UI of a modern cloud app with the security of a local binary.
+- **Deep Debugging Stays Local:** The rich, interactive visual dashboard, including the JSON explorer and API Replay tools, runs on a dynamic, locally bound port on your machine. You get the UI of a modern cloud app with the security of a local binary.
 
-- **CI/CD Leak Protection:** In Enterprise Parallel mode, Flowstride automatically suppresses verbose terminal output. This ensures that your sensitive payloads and API keys are never accidentally printed into plaintext Jenkins, GitHub Actions, or GitLab CI pipeline logs.
+### CI/CD Leak Protection & Terminal Hygiene
+
+Standard testing frameworks do dump failing API requests, and response bodies directly into the terminal so developers can debug them. In a CI/CD environment, this is a massive security liability, as those secrets are permanently burned into plaintext Jenkins, GitHub Actions, or GitLab CI logs.
+
+Flowstride completely neutralizes this threat by architecturally separating execution output from diagnostic telemetry:
+
+1. **Clean Standard Output (`stdout`):** Flowstride's terminal output only displays high-level, human-readable BDD execution steps (e.g., `✔ Given "User lands on home page"` or `✖ Action Failed`). No JSON request bodies, `cURL` strings, or bearer tokens are ever printed to the terminal console.
+
+2. **WebSocket Isolation:** All sensitive raw network data (payloads, headers, and responses) is emitted _exclusively_ over a secure, ephemeral WebSocket connection directly to the developer's local UI dashboard.
+
+3. **Total Evaporation:** Because CI/CD runners only capture `stdout` text and do not connect to local WebSockets, your highly sensitive diagnostic data simply evaporates the moment the pipeline execution ends. Your pipeline logs remain 100% free of plaintext secrets.
 
 ---
 
