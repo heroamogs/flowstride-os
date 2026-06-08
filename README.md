@@ -49,6 +49,34 @@ _(This command executes your test while instantly booting up the local Flowstrid
 
 ---
 
+## Privacy & Data Security
+
+Flowstride is designed with a **zero-trust, local-first architecture**. Whether you are testing internal microservices, staging environments, or production APIs, your sensitive data, PHI, and credentials remain strictly on your infrastructure.
+
+### Open Source Core: 100% Local Isolation
+
+The Open Source version of Flowstride operates entirely as an ephemeral, local execution engine.
+
+- **Air-Gapped Execution:** Flowstride does not "phone home." The OS runner executes strictly on your local machine or within your private CI/CD pipeline. There is no external Flowstride database storing your test payloads or network logs.
+
+- **Ephemeral Memory:** Flowstride is inherently stateless. API request headers, response bodies, and DOM snapshots exist only in Node.js RAM during execution. The millisecond the execution process terminates, all memory is wiped.
+
+- **The DevTools Analogy:** Our network interception works natively within Playwright's browser context routing. It is fundamentally identical to opening the Chrome DevTools "Network" tab locally. We do not act as an external Man-In-The-Middle (MITM) proxy.
+
+- **Opt-In Local State:** Artifacts saved to disk—such as execution videos (`.flowstride/mock-cloud/`) or explicitly persisted browser states (`.flowstride/sessions/`)—are written strictly to your local file system to mirror the functionality of tools like Postman. _(Note: We strongly recommend adding `.flowstride/` to your `.gitignore` to prevent accidental credential commits)._
+
+### Flowstride Enterprise: Secure Cloud Telemetry
+
+For teams using Flowstride Enterprise to aggregate multi-flow metrics, we maintain a strict metadata-only boundary.
+
+- **Metadata, Not Payloads:** When cloud sync is active, Flowstride routes only execution metadata to your team's dashboard (e.g., Workspace ID, execution duration, total steps, and pass/fail tallies). **Zero bytes** of request headers, bearer tokens, or JSON bodies are ever transmitted to Flowstride Cloud.
+
+- **Deep Debugging Stays Local:** The rich, interactive visual dashboard—including the JSON explorer and API Replay tools—runs on a dynamic, locally bound port on your machine. You get the UI of a modern cloud app with the security of a local binary.
+
+- **CI/CD Leak Protection:** In Enterprise Parallel mode, Flowstride automatically suppresses verbose terminal output. This ensures that your sensitive payloads and API keys are never accidentally printed into plaintext Jenkins, GitHub Actions, or GitLab CI pipeline logs.
+
+---
+
 ## The `.flow` Syntax
 
 Flowstride utilizes a custom `.flow` file extension. It seamlessly pairs descriptive BDD steps (Given, When, And, Then) with direct, executable `flow.` commands.

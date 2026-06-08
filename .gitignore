@@ -1,9 +1,6 @@
 # Dependencies
 node_modules/
 
-# flowstride-os:
-
-
 # Production Builds & Compiled Code
 dist/
 out/
