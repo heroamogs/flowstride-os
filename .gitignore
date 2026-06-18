@@ -2,10 +2,10 @@
 node_modules/
 
 # Production Builds & Compiled Code
-# dist/
-# out/
-# build/
-# *.tsbuildinfo
+dist/
+out/
+build/
+*.tsbuildinfo
 
 # Flowstride Specific Framework Artifacts
 .flowstride/
