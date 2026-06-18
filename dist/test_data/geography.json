@@ -1,0 +1,1298 @@
+{
+    "locations": [
+        {
+            "country": "Nigeria",
+            "iso": "NG",
+            "states": [
+                {
+                    "name": "Abia",
+                    "cities": ["Umuahia", "Aba", "Ohafia", "Arochukwu", "Bende"]
+                },
+                {
+                    "name": "Adamawa",
+                    "cities": ["Yola", "Mubi", "Numan", "Jimeta", "Ganye"]
+                },
+                {
+                    "name": "Akwa Ibom",
+                    "cities": ["Uyo", "Eket", "Ikot Ekpene", "Oron", "Abak"]
+                },
+                {
+                    "name": "Anambra",
+                    "cities": ["Awka", "Onitsha", "Nnewi", "Ekwulobia", "Ogidi"]
+                },
+                {
+                    "name": "Bauchi",
+                    "cities": ["Bauchi", "Azare", "Misau", "Jamaare", "Katagum"]
+                },
+                {
+                    "name": "Bayelsa",
+                    "cities": ["Yenagoa", "Brass", "Sagbama", "Ogbia", "Nembe"]
+                },
+                {
+                    "name": "Benue",
+                    "cities": ["Makurdi", "Gboko", "Otukpo", "Katsina-Ala", "Vandeikya"]
+                },
+                {
+                    "name": "Borno",
+                    "cities": ["Maiduguri", "Biu", "Dikwa", "Monguno", "Bama"]
+                },
+                {
+                    "name": "Cross River",
+                    "cities": ["Calabar", "Ikom", "Ogoja", "Obudu", "Ugep"]
+                },
+                {
+                    "name": "Delta",
+                    "cities": ["Asaba", "Warri", "Sapele", "Ughelli", "Agbor"]
+                },
+                {
+                    "name": "Ebonyi",
+                    "cities": ["Abakaliki", "Afikpo", "Onueke", "Ezza", "Ikwo"]
+                },
+                {
+                    "name": "Edo",
+                    "cities": ["Benin City", "Ekpoma", "Auchi", "Uromi", "Irrua"]
+                },
+                {
+                    "name": "Ekiti",
+                    "cities": ["Ado Ekiti", "Ikere", "Oye", "Iyin", "Emure"]
+                },
+                {
+                    "name": "Enugu",
+                    "cities": ["Enugu", "Nsukka", "Oji River", "Agbani", "Udi"]
+                },
+                {
+                    "name": "Gombe",
+                    "cities": ["Gombe", "Kumo", "Billiri", "Dukku", "Nafada"]
+                },
+                {
+                    "name": "Imo",
+                    "cities": ["Owerri", "Orlu", "Okigwe", "Mbaise", "Oguta"]
+                },
+                {
+                    "name": "Jigawa",
+                    "cities": ["Dutse", "Hadejia", "Gumel", "Kazaure", "Ringim"]
+                },
+                {
+                    "name": "Kaduna",
+                    "cities": ["Kaduna", "Zaria", "Kafanchan", "Sabon Gari", "Jema'a"]
+                },
+                {
+                    "name": "Kano",
+                    "cities": ["Kano", "Wudil", "Bichi", "Rano", "Gaya"]
+                },
+                {
+                    "name": "Katsina",
+                    "cities": ["Katsina", "Daura", "Funtua", "Malumfashi", "Dutsin-Ma"]
+                },
+                {
+                    "name": "Kebbi",
+                    "cities": ["Birnin Kebbi", "Argungu", "Yauri", "Zuru", "Jega"]
+                },
+                {
+                    "name": "Kogi",
+                    "cities": ["Lokoja", "Okene", "Kabba", "Idah", "Anyigba"]
+                },
+                {
+                    "name": "Kwara",
+                    "cities": ["Ilorin", "Offa", "Omu-Aran", "Lafiagi", "Jebba"]
+                },
+                {
+                    "name": "Lagos",
+                    "cities": ["Lagos", "Ikeja", "Ikorodu", "Epe", "Badagry"]
+                },
+                {
+                    "name": "Nasarawa",
+                    "cities": ["Lafia", "Keffi", "Akwanga", "Nasarawa", "Doma"]
+                },
+                {
+                    "name": "Niger",
+                    "cities": ["Minna", "Suleja", "Bida", "Kontagora", "New Bussa"]
+                },
+                {
+                    "name": "Ogun",
+                    "cities": ["Abeokuta", "Ijebu Ode", "Sagamu", "Ota", "Ilaro"]
+                },
+                {
+                    "name": "Ondo",
+                    "cities": ["Akure", "Ondo", "Owo", "Ikare", "Ore"]
+                },
+                {
+                    "name": "Osun",
+                    "cities": ["Osogbo", "Ile-Ife", "Ilesa", "Ede", "Ikirun"]
+                },
+                {
+                    "name": "Oyo",
+                    "cities": ["Ibadan", "Ogbomosho", "Oyo", "Iseyin", "Saki"]
+                },
+                {
+                    "name": "Plateau",
+                    "cities": ["Jos", "Bukuru", "Pankshin", "Shendam", "Langtang"]
+                },
+                {
+                    "name": "Rivers",
+                    "cities": ["Port Harcourt", "Bonny", "Okrika", "Omoku", "Eleme"]
+                },
+                {
+                    "name": "Sokoto",
+                    "cities": ["Sokoto", "Tambuwal", "Wurno", "Gwadabawa", "Illela"]
+                },
+                {
+                    "name": "Taraba",
+                    "cities": ["Jalingo", "Wukari", "Bali", "Takum", "Serti"]
+                },
+                {
+                    "name": "Yobe",
+                    "cities": ["Damaturu", "Potiskum", "Nguru", "Gashua", "Geidam"]
+                },
+                {
+                    "name": "Zamfara",
+                    "cities": ["Gusau", "Kaura Namoda", "Talata Mafara", "Anka", "Maru"]
+                },
+                {
+                    "name": "Federal Capital Territory",
+                    "cities": ["Abuja", "Gwagwalada", "Kuje", "Kwali", "Bwari"]
+                }
+            ]
+        },
+        {
+            "country": "United States of America",
+            "iso": "US",
+            "states": [
+                {
+                    "name": "Alabama",
+                    "cities": ["Birmingham", "Montgomery", "Mobile", "Huntsville", "Tuscaloosa"]
+                },
+                {
+                    "name": "Alaska",
+                    "cities": ["Anchorage", "Fairbanks", "Juneau", "Sitka", "Ketchikan"]
+                },
+                {
+                    "name": "Arizona",
+                    "cities": ["Phoenix", "Tucson", "Mesa", "Chandler", "Scottsdale"]
+                },
+                {
+                    "name": "Arkansas",
+                    "cities": ["Little Rock", "Fort Smith", "Fayetteville", "Springdale", "Jonesboro"]
+                },
+                {
+                    "name": "California",
+                    "cities": ["Los Angeles", "San Francisco", "San Diego", "San Jose", "Sacramento"]
+                },
+                {
+                    "name": "Colorado",
+                    "cities": ["Denver", "Colorado Springs", "Aurora", "Fort Collins", "Boulder"]
+                },
+                {
+                    "name": "Connecticut",
+                    "cities": ["Bridgeport", "New Haven", "Hartford", "Stamford", "Waterbury"]
+                },
+                {
+                    "name": "Delaware",
+                    "cities": ["Wilmington", "Dover", "Newark", "Middletown", "Smyrna"]
+                },
+                {
+                    "name": "Florida",
+                    "cities": ["Miami", "Orlando", "Tampa", "Jacksonville", "Tallahassee"]
+                },
+                {
+                    "name": "Georgia",
+                    "cities": ["Atlanta", "Augusta", "Savannah", "Athens", "Macon"]
+                },
+                {
+                    "name": "Hawaii",
+                    "cities": ["Honolulu", "Hilo", "Kailua", "Pearl City", "Waipahu"]
+                },
+                {
+                    "name": "Idaho",
+                    "cities": ["Boise", "Meridian", "Nampa", "Idaho Falls", "Pocatello"]
+                },
+                {
+                    "name": "Illinois",
+                    "cities": ["Chicago", "Aurora", "Naperville", "Springfield", "Peoria"]
+                },
+                {
+                    "name": "Indiana",
+                    "cities": ["Indianapolis", "Fort Wayne", "Evansville", "South Bend", "Bloomington"]
+                },
+                {
+                    "name": "Iowa",
+                    "cities": ["Des Moines", "Cedar Rapids", "Davenport", "Sioux City", "Iowa City"]
+                },
+                {
+                    "name": "Kansas",
+                    "cities": ["Wichita", "Overland Park", "Kansas City", "Topeka", "Lawrence"]
+                },
+                {
+                    "name": "Kentucky",
+                    "cities": ["Louisville", "Lexington", "Bowling Green", "Owensboro", "Covington"]
+                },
+                {
+                    "name": "Louisiana",
+                    "cities": ["New Orleans", "Baton Rouge", "Shreveport", "Lafayette", "Lake Charles"]
+                },
+                {
+                    "name": "Maine",
+                    "cities": ["Portland", "Lewiston", "Bangor", "Auburn", "Augusta"]
+                },
+                {
+                    "name": "Maryland",
+                    "cities": ["Baltimore", "Frederick", "Rockville", "Gaithersburg", "Annapolis"]
+                },
+                {
+                    "name": "Massachusetts",
+                    "cities": ["Boston", "Worcester", "Springfield", "Cambridge", "Lowell"]
+                },
+                {
+                    "name": "Michigan",
+                    "cities": ["Detroit", "Grand Rapids", "Warren", "Ann Arbor", "Lansing"]
+                },
+                {
+                    "name": "Minnesota",
+                    "cities": ["Minneapolis", "Saint Paul", "Rochester", "Duluth", "Bloomington"]
+                },
+                {
+                    "name": "Mississippi",
+                    "cities": ["Jackson", "Gulfport", "Southaven", "Hattiesburg", "Biloxi"]
+                },
+                {
+                    "name": "Missouri",
+                    "cities": ["Kansas City", "Saint Louis", "Springfield", "Columbia", "Independence"]
+                },
+                {
+                    "name": "Montana",
+                    "cities": ["Billings", "Missoula", "Great Falls", "Bozeman", "Helena"]
+                },
+                {
+                    "name": "Nebraska",
+                    "cities": ["Omaha", "Lincoln", "Bellevue", "Grand Island", "Kearney"]
+                },
+                {
+                    "name": "Nevada",
+                    "cities": ["Las Vegas", "Henderson", "Reno", "North Las Vegas", "Carson City"]
+                },
+                {
+                    "name": "New Hampshire",
+                    "cities": ["Manchester", "Nashua", "Concord", "Dover", "Rochester"]
+                },
+                {
+                    "name": "New Jersey",
+                    "cities": ["Newark", "Jersey City", "Paterson", "Elizabeth", "Trenton"]
+                },
+                {
+                    "name": "New Mexico",
+                    "cities": ["Albuquerque", "Las Cruces", "Santa Fe", "Roswell", "Farmington"]
+                },
+                {
+                    "name": "New York",
+                    "cities": ["New York City", "Buffalo", "Rochester", "Syracuse", "Albany"]
+                },
+                {
+                    "name": "North Carolina",
+                    "cities": ["Charlotte", "Raleigh", "Greensboro", "Durham", "Winston-Salem"]
+                },
+                {
+                    "name": "North Dakota",
+                    "cities": ["Fargo", "Bismarck", "Grand Forks", "Minot", "West Fargo"]
+                },
+                {
+                    "name": "Ohio",
+                    "cities": ["Columbus", "Cleveland", "Cincinnati", "Toledo", "Akron"]
+                },
+                {
+                    "name": "Oklahoma",
+                    "cities": ["Oklahoma City", "Tulsa", "Norman", "Broken Arrow", "Lawton"]
+                },
+                {
+                    "name": "Oregon",
+                    "cities": ["Portland", "Eugene", "Salem", "Gresham", "Bend"]
+                },
+                {
+                    "name": "Pennsylvania",
+                    "cities": ["Philadelphia", "Pittsburgh", "Allentown", "Erie", "Harrisburg"]
+                },
+                {
+                    "name": "Rhode Island",
+                    "cities": ["Providence", "Warwick", "Cranston", "Pawtucket", "Newport"]
+                },
+                {
+                    "name": "South Carolina",
+                    "cities": ["Columbia", "Charleston", "Greenville", "Myrtle Beach", "Spartanburg"]
+                },
+                {
+                    "name": "South Dakota",
+                    "cities": ["Sioux Falls", "Rapid City", "Aberdeen", "Brookings", "Watertown"]
+                },
+                {
+                    "name": "Tennessee",
+                    "cities": ["Nashville", "Memphis", "Knoxville", "Chattanooga", "Clarksville"]
+                },
+                {
+                    "name": "Texas",
+                    "cities": ["Houston", "Dallas", "Austin", "San Antonio", "Fort Worth"]
+                },
+                {
+                    "name": "Utah",
+                    "cities": ["Salt Lake City", "West Valley City", "Provo", "Ogden", "St. George"]
+                },
+                {
+                    "name": "Vermont",
+                    "cities": ["Burlington", "South Burlington", "Rutland", "Barre", "Montpelier"]
+                },
+                {
+                    "name": "Virginia",
+                    "cities": ["Virginia Beach", "Norfolk", "Richmond", "Roanoke", "Alexandria"]
+                },
+                {
+                    "name": "Washington",
+                    "cities": ["Seattle", "Spokane", "Tacoma", "Vancouver", "Bellevue"]
+                },
+                {
+                    "name": "West Virginia",
+                    "cities": ["Charleston", "Huntington", "Morgantown", "Parkersburg", "Wheeling"]
+                },
+                {
+                    "name": "Wisconsin",
+                    "cities": ["Milwaukee", "Madison", "Green Bay", "Kenosha", "Racine"]
+                },
+                {
+                    "name": "Wyoming",
+                    "cities": ["Cheyenne", "Casper", "Laramie", "Gillette", "Rock Springs"]
+                }
+            ]
+        },
+        {
+            "country": "United Kingdom",
+            "iso": "GB",
+            "states": [
+                {
+                    "name": "England",
+                    "cities": ["London", "Manchester", "Birmingham", "Liverpool", "Leeds"]
+                },
+                {
+                    "name": "Scotland",
+                    "cities": ["Edinburgh", "Glasgow", "Aberdeen", "Dundee", "Inverness"]
+                },
+                {
+                    "name": "Wales",
+                    "cities": ["Cardiff", "Swansea", "Newport", "Wrexham", "Bangor"]
+                },
+                {
+                    "name": "Northern Ireland",
+                    "cities": ["Belfast", "Derry", "Lisburn", "Newry", "Armagh"]
+                },
+                {
+                    "name": "Greater London",
+                    "cities": ["London", "Croydon", "Harrow", "Bromley", "Ealing"]
+                },
+                {
+                    "name": "Greater Manchester",
+                    "cities": ["Manchester", "Salford", "Bolton", "Stockport", "Oldham"]
+                },
+                {
+                    "name": "West Midlands",
+                    "cities": ["Birmingham", "Coventry", "Wolverhampton", "Solihull", "Walsall"]
+                },
+                {
+                    "name": "Merseyside",
+                    "cities": ["Liverpool", "Birkenhead", "Southport", "St Helens", "Bootle"]
+                },
+                {
+                    "name": "West Yorkshire",
+                    "cities": ["Leeds", "Bradford", "Wakefield", "Huddersfield", "Halifax"]
+                },
+                {
+                    "name": "South Yorkshire",
+                    "cities": ["Sheffield", "Doncaster", "Rotherham", "Barnsley", "Mexborough"]
+                },
+                {
+                    "name": "North Yorkshire",
+                    "cities": ["York", "Harrogate", "Scarborough", "Ripon", "Selby"]
+                },
+                {
+                    "name": "Lancashire",
+                    "cities": ["Preston", "Blackpool", "Burnley", "Blackburn", "Lancaster"]
+                },
+                {
+                    "name": "Kent",
+                    "cities": ["Canterbury", "Maidstone", "Dover", "Ashford", "Gillingham"]
+                },
+                {
+                    "name": "Essex",
+                    "cities": ["Chelmsford", "Colchester", "Southend-on-Sea", "Basildon", "Harlow"]
+                },
+                {
+                    "name": "Hampshire",
+                    "cities": ["Southampton", "Portsmouth", "Winchester", "Basingstoke", "Aldershot"]
+                },
+                {
+                    "name": "Surrey",
+                    "cities": ["Guildford", "Woking", "Epsom", "Farnham", "Redhill"]
+                },
+                {
+                    "name": "Devon",
+                    "cities": ["Exeter", "Plymouth", "Torquay", "Barnstaple", "Paignton"]
+                },
+                {
+                    "name": "Cornwall",
+                    "cities": ["Truro", "Falmouth", "Penzance", "Newquay", "St Austell"]
+                },
+                {
+                    "name": "Norfolk",
+                    "cities": ["Norwich", "Great Yarmouth", "King's Lynn", "Thetford", "Dereham"]
+                },
+                {
+                    "name": "Suffolk",
+                    "cities": ["Ipswich", "Lowestoft", "Bury St Edmunds", "Felixstowe", "Sudbury"]
+                },
+                {
+                    "name": "Cambridgeshire",
+                    "cities": ["Cambridge", "Peterborough", "Huntingdon", "Wisbech", "Ely"]
+                },
+                {
+                    "name": "Oxfordshire",
+                    "cities": ["Oxford", "Banbury", "Abingdon", "Bicester", "Witney"]
+                },
+                {
+                    "name": "Berkshire",
+                    "cities": ["Reading", "Slough", "Windsor", "Maidenhead", "Bracknell"]
+                },
+                {
+                    "name": "Leicestershire",
+                    "cities": ["Leicester", "Loughborough", "Hinckley", "Melton Mowbray", "Coalville"]
+                },
+                {
+                    "name": "Nottinghamshire",
+                    "cities": ["Nottingham", "Mansfield", "Worksop", "Newark-on-Trent", "Retford"]
+                },
+                {
+                    "name": "Derbyshire",
+                    "cities": ["Derby", "Chesterfield", "Buxton", "Ilkeston", "Swadlincote"]
+                },
+                {
+                    "name": "Gloucestershire",
+                    "cities": ["Gloucester", "Cheltenham", "Stroud", "Cirencester", "Tewkesbury"]
+                },
+                {
+                    "name": "Somerset",
+                    "cities": ["Bath", "Taunton", "Yeovil", "Bridgwater", "Weston-super-Mare"]
+                },
+                {
+                    "name": "Dorset",
+                    "cities": ["Bournemouth", "Poole", "Dorchester", "Weymouth", "Christchurch"]
+                },
+                {
+                    "name": "Cheshire",
+                    "cities": ["Chester", "Crewe", "Warrington", "Macclesfield", "Northwich"]
+                },
+                {
+                    "name": "Cumbria",
+                    "cities": ["Carlisle", "Barrow-in-Furness", "Kendal", "Workington", "Whitehaven"]
+                },
+                {
+                    "name": "Tyne and Wear",
+                    "cities": [
+                        "Newcastle upon Tyne",
+                        "Sunderland",
+                        "Gateshead",
+                        "South Shields",
+                        "Washington"
+                    ]
+                },
+                {
+                    "name": "Durham",
+                    "cities": ["Durham", "Darlington", "Hartlepool", "Peterlee", "Bishop Auckland"]
+                },
+                {
+                    "name": "Fife",
+                    "cities": ["Dunfermline", "Kirkcaldy", "St Andrews", "Glenrothes", "Cupar"]
+                },
+                {
+                    "name": "Highland",
+                    "cities": ["Inverness", "Fort William", "Thurso", "Wick", "Aviemore"]
+                },
+                {
+                    "name": "Aberdeenshire",
+                    "cities": ["Peterhead", "Fraserburgh", "Inverurie", "Stonehaven", "Ellon"]
+                },
+                {
+                    "name": "Gwynedd",
+                    "cities": ["Bangor", "Caernarfon", "Porthmadog", "Pwllheli", "Blaenau Ffestiniog"]
+                },
+                {
+                    "name": "Powys",
+                    "cities": ["Newtown", "Brecon", "Welshpool", "Llandrindod Wells", "Ystradgynlais"]
+                },
+                {
+                    "name": "County Antrim",
+                    "cities": ["Ballymena", "Carrickfergus", "Larne", "Antrim", "Ballycastle"]
+                },
+                {
+                    "name": "County Down",
+                    "cities": ["Bangor", "Newtownards", "Downpatrick", "Holywood", "Newcastle"]
+                }
+            ]
+        },
+        {
+            "country": "Canada",
+            "iso": "CA",
+            "states": [
+                {
+                    "name": "Alberta",
+                    "cities": ["Calgary", "Edmonton", "Red Deer", "Lethbridge", "Medicine Hat"]
+                },
+                {
+                    "name": "British Columbia",
+                    "cities": ["Vancouver", "Victoria", "Surrey", "Burnaby", "Kelowna"]
+                },
+                {
+                    "name": "Manitoba",
+                    "cities": ["Winnipeg", "Brandon", "Steinbach", "Thompson", "Portage la Prairie"]
+                },
+                {
+                    "name": "New Brunswick",
+                    "cities": ["Fredericton", "Moncton", "Saint John", "Miramichi", "Edmundston"]
+                },
+                {
+                    "name": "Newfoundland and Labrador",
+                    "cities": [
+                        "St. John's",
+                        "Corner Brook",
+                        "Gander",
+                        "Mount Pearl",
+                        "Happy Valley-Goose Bay"
+                    ]
+                },
+                {
+                    "name": "Nova Scotia",
+                    "cities": ["Halifax", "Sydney", "Dartmouth", "Truro", "New Glasgow"]
+                },
+                {
+                    "name": "Ontario",
+                    "cities": ["Toronto", "Ottawa", "Hamilton", "London", "Kitchener"]
+                },
+                {
+                    "name": "Prince Edward Island",
+                    "cities": ["Charlottetown", "Summerside", "Stratford", "Cornwall", "Montague"]
+                },
+                {
+                    "name": "Quebec",
+                    "cities": ["Montreal", "Quebec City", "Laval", "Gatineau", "Sherbrooke"]
+                },
+                {
+                    "name": "Saskatchewan",
+                    "cities": ["Saskatoon", "Regina", "Prince Albert", "Moose Jaw", "Yorkton"]
+                },
+                {
+                    "name": "Northwest Territories",
+                    "cities": ["Yellowknife", "Hay River", "Inuvik", "Fort Smith", "Behchoko"]
+                },
+                {
+                    "name": "Nunavut",
+                    "cities": ["Iqaluit", "Rankin Inlet", "Arviat", "Cambridge Bay", "Baker Lake"]
+                },
+                {
+                    "name": "Yukon",
+                    "cities": ["Whitehorse", "Dawson City", "Watson Lake", "Haines Junction", "Carmacks"]
+                }
+            ]
+        },
+        {
+            "country": "Germany",
+            "iso": "DE",
+            "states": [
+                {
+                    "name": "Baden-Wurttemberg",
+                    "cities": ["Stuttgart", "Karlsruhe", "Mannheim", "Freiburg im Breisgau", "Heidelberg"]
+                },
+                {
+                    "name": "Bavaria",
+                    "cities": ["Munich", "Nuremberg", "Augsburg", "Regensburg", "Wurzburg"]
+                },
+                {
+                    "name": "Berlin",
+                    "cities": ["Berlin"]
+                },
+                {
+                    "name": "Brandenburg",
+                    "cities": [
+                        "Potsdam",
+                        "Cottbus",
+                        "Brandenburg an der Havel",
+                        "Frankfurt an der Oder",
+                        "Oranienburg"
+                    ]
+                },
+                {
+                    "name": "Bremen",
+                    "cities": ["Bremen", "Bremerhaven"]
+                },
+                {
+                    "name": "Hamburg",
+                    "cities": ["Hamburg"]
+                },
+                {
+                    "name": "Hesse",
+                    "cities": ["Frankfurt am Main", "Wiesbaden", "Darmstadt", "Kassel", "Offenbach am Main"]
+                },
+                {
+                    "name": "Lower Saxony",
+                    "cities": ["Hanover", "Braunschweig", "Oldenburg", "Osnabruck", "Gottingen"]
+                },
+                {
+                    "name": "Mecklenburg-Vorpommern",
+                    "cities": ["Rostock", "Schwerin", "Neubrandenburg", "Stralsund", "Greifswald"]
+                },
+                {
+                    "name": "North Rhine-Westphalia",
+                    "cities": ["Cologne", "Dusseldorf", "Dortmund", "Essen", "Bonn"]
+                },
+                {
+                    "name": "Rhineland-Palatinate",
+                    "cities": ["Mainz", "Ludwigshafen", "Koblenz", "Trier", "Kaiserslautern"]
+                },
+                {
+                    "name": "Saarland",
+                    "cities": ["Saarbrucken", "Neunkirchen", "Homburg", "Volklingen", "Sankt Ingbert"]
+                },
+                {
+                    "name": "Saxony",
+                    "cities": ["Dresden", "Leipzig", "Chemnitz", "Zwickau", "Gorlitz"]
+                },
+                {
+                    "name": "Saxony-Anhalt",
+                    "cities": ["Magdeburg", "Halle", "Dessau-Rosslau", "Wittenberg", "Halberstadt"]
+                },
+                {
+                    "name": "Schleswig-Holstein",
+                    "cities": ["Kiel", "Lubeck", "Flensburg", "Neumunster", "Elmshorn"]
+                },
+                {
+                    "name": "Thuringia",
+                    "cities": ["Erfurt", "Jena", "Gera", "Weimar", "Eisenach"]
+                }
+            ]
+        },
+        {
+            "country": "France",
+            "iso": "FR",
+            "states": [
+                {
+                    "name": "Auvergne-Rhone-Alpes",
+                    "cities": ["Lyon", "Grenoble", "Saint-Etienne", "Clermont-Ferrand", "Annecy"]
+                },
+                {
+                    "name": "Bourgogne-Franche-Comte",
+                    "cities": ["Dijon", "Besancon", "Chalon-sur-Saone", "Auxerre", "Nevers"]
+                },
+                {
+                    "name": "Brittany",
+                    "cities": ["Rennes", "Brest", "Quimper", "Saint-Malo", "Lorient"]
+                },
+                {
+                    "name": "Centre-Val de Loire",
+                    "cities": ["Tours", "Orleans", "Bourges", "Blois", "Chartres"]
+                },
+                {
+                    "name": "Corsica",
+                    "cities": ["Ajaccio", "Bastia", "Calvi", "Corte", "Porto-Vecchio"]
+                },
+                {
+                    "name": "Grand Est",
+                    "cities": ["Strasbourg", "Reims", "Metz", "Nancy", "Mulhouse"]
+                },
+                {
+                    "name": "Hauts-de-France",
+                    "cities": ["Lille", "Amiens", "Roubaix", "Tourcoing", "Calais"]
+                },
+                {
+                    "name": "Ile-de-France",
+                    "cities": ["Paris", "Boulogne-Billancourt", "Saint-Denis", "Nanterre", "Versailles"]
+                },
+                {
+                    "name": "Normandy",
+                    "cities": ["Rouen", "Caen", "Le Havre", "Cherbourg-en-Cotentin", "Evreux"]
+                },
+                {
+                    "name": "Nouvelle-Aquitaine",
+                    "cities": ["Bordeaux", "Limoges", "Poitiers", "Pau", "La Rochelle"]
+                },
+                {
+                    "name": "Occitanie",
+                    "cities": ["Toulouse", "Montpellier", "Nimes", "Perpignan", "Beziers"]
+                },
+                {
+                    "name": "Pays de la Loire",
+                    "cities": ["Nantes", "Angers", "Le Mans", "Saint-Nazaire", "Laval"]
+                },
+                {
+                    "name": "Provence-Alpes-Cote d'Azur",
+                    "cities": ["Marseille", "Nice", "Toulon", "Aix-en-Provence", "Avignon"]
+                },
+                {
+                    "name": "Guadeloupe",
+                    "cities": ["Basse-Terre", "Pointe-a-Pitre", "Le Gosier", "Sainte-Anne", "Baie-Mahault"]
+                },
+                {
+                    "name": "Martinique",
+                    "cities": ["Fort-de-France", "Le Lamentin", "Schoelcher", "Le Robert", "Sainte-Marie"]
+                },
+                {
+                    "name": "French Guiana",
+                    "cities": ["Cayenne", "Kourou", "Saint-Laurent-du-Maroni", "Matoury", "Remire-Montjoly"]
+                },
+                {
+                    "name": "Reunion",
+                    "cities": ["Saint-Denis", "Saint-Pierre", "Le Tampon", "Saint-Paul", "Saint-Andre"]
+                },
+                {
+                    "name": "Mayotte",
+                    "cities": ["Mamoudzou", "Koungou", "Dzaoudzi", "Bandraboua", "Sada"]
+                }
+            ]
+        },
+        {
+            "country": "Australia",
+            "iso": "AU",
+            "states": [
+                {
+                    "name": "New South Wales",
+                    "cities": ["Sydney", "Newcastle", "Wollongong", "Albury", "Dubbo"]
+                },
+                {
+                    "name": "Victoria",
+                    "cities": ["Melbourne", "Geelong", "Ballarat", "Bendigo", "Shepparton"]
+                },
+                {
+                    "name": "Queensland",
+                    "cities": ["Brisbane", "Gold Coast", "Cairns", "Townsville", "Toowoomba"]
+                },
+                {
+                    "name": "Western Australia",
+                    "cities": ["Perth", "Fremantle", "Bunbury", "Geraldton", "Albany"]
+                },
+                {
+                    "name": "South Australia",
+                    "cities": ["Adelaide", "Mount Gambier", "Whyalla", "Port Augusta", "Port Lincoln"]
+                },
+                {
+                    "name": "Tasmania",
+                    "cities": ["Hobart", "Launceston", "Devonport", "Burnie", "Kingston"]
+                },
+                {
+                    "name": "Australian Capital Territory",
+                    "cities": ["Canberra"]
+                },
+                {
+                    "name": "Northern Territory",
+                    "cities": ["Darwin", "Alice Springs", "Katherine", "Nhulunbuy", "Tennant Creek"]
+                }
+            ]
+        },
+        {
+            "country": "India",
+            "iso": "IN",
+            "states": [
+                {
+                    "name": "Andhra Pradesh",
+                    "cities": ["Visakhapatnam", "Vijayawada", "Guntur", "Nellore", "Kurnool"]
+                },
+                {
+                    "name": "Arunachal Pradesh",
+                    "cities": ["Itanagar", "Tawang", "Ziro", "Pasighat", "Naharlagun"]
+                },
+                {
+                    "name": "Assam",
+                    "cities": ["Guwahati", "Silchar", "Dibrugarh", "Jorhat", "Tezpur"]
+                },
+                {
+                    "name": "Bihar",
+                    "cities": ["Patna", "Gaya", "Muzaffarpur", "Bhagalpur", "Darbhanga"]
+                },
+                {
+                    "name": "Chhattisgarh",
+                    "cities": ["Raipur", "Bhilai", "Bilaspur", "Korba", "Jagdalpur"]
+                },
+                {
+                    "name": "Goa",
+                    "cities": ["Panaji", "Margao", "Vasco da Gama", "Mapusa", "Ponda"]
+                },
+                {
+                    "name": "Gujarat",
+                    "cities": ["Ahmedabad", "Surat", "Vadodara", "Rajkot", "Bhavnagar"]
+                },
+                {
+                    "name": "Haryana",
+                    "cities": ["Gurugram", "Faridabad", "Panipat", "Ambala", "Hisar"]
+                },
+                {
+                    "name": "Himachal Pradesh",
+                    "cities": ["Shimla", "Dharamshala", "Mandi", "Solan", "Kullu"]
+                },
+                {
+                    "name": "Jharkhand",
+                    "cities": ["Ranchi", "Jamshedpur", "Dhanbad", "Bokaro", "Hazaribagh"]
+                },
+                {
+                    "name": "Karnataka",
+                    "cities": ["Bengaluru", "Mysuru", "Mangaluru", "Hubballi", "Belagavi"]
+                },
+                {
+                    "name": "Kerala",
+                    "cities": ["Thiruvananthapuram", "Kochi", "Kozhikode", "Thrissur", "Kollam"]
+                },
+                {
+                    "name": "Madhya Pradesh",
+                    "cities": ["Bhopal", "Indore", "Gwalior", "Jabalpur", "Ujjain"]
+                },
+                {
+                    "name": "Maharashtra",
+                    "cities": ["Mumbai", "Pune", "Nagpur", "Nashik", "Aurangabad"]
+                },
+                {
+                    "name": "Manipur",
+                    "cities": ["Imphal", "Thoubal", "Bishnupur", "Ukhrul", "Churachandpur"]
+                },
+                {
+                    "name": "Meghalaya",
+                    "cities": ["Shillong", "Tura", "Jowai", "Nongstoin", "Baghmara"]
+                },
+                {
+                    "name": "Mizoram",
+                    "cities": ["Aizawl", "Lunglei", "Champhai", "Kolasib", "Serchhip"]
+                },
+                {
+                    "name": "Nagaland",
+                    "cities": ["Kohima", "Dimapur", "Mokokchung", "Tuensang", "Wokha"]
+                },
+                {
+                    "name": "Odisha",
+                    "cities": ["Bhubaneswar", "Cuttack", "Rourkela", "Sambalpur", "Puri"]
+                },
+                {
+                    "name": "Punjab",
+                    "cities": ["Ludhiana", "Amritsar", "Jalandhar", "Patiala", "Bathinda"]
+                },
+                {
+                    "name": "Rajasthan",
+                    "cities": ["Jaipur", "Jodhpur", "Udaipur", "Kota", "Bikaner"]
+                },
+                {
+                    "name": "Sikkim",
+                    "cities": ["Gangtok", "Namchi", "Gyalshing", "Mangan", "Rangpo"]
+                },
+                {
+                    "name": "Tamil Nadu",
+                    "cities": ["Chennai", "Coimbatore", "Madurai", "Salem", "Tiruchirappalli"]
+                },
+                {
+                    "name": "Telangana",
+                    "cities": ["Hyderabad", "Warangal", "Nizamabad", "Karimnagar", "Khammam"]
+                },
+                {
+                    "name": "Tripura",
+                    "cities": ["Agartala", "Udaipur", "Dharmanagar", "Kailashahar", "Belonia"]
+                },
+                {
+                    "name": "Uttar Pradesh",
+                    "cities": ["Lucknow", "Kanpur", "Agra", "Varanasi", "Prayagraj"]
+                },
+                {
+                    "name": "Uttarakhand",
+                    "cities": ["Dehradun", "Haridwar", "Nainital", "Roorkee", "Haldwani"]
+                },
+                {
+                    "name": "West Bengal",
+                    "cities": ["Kolkata", "Howrah", "Durgapur", "Siliguri", "Asansol"]
+                },
+                {
+                    "name": "Andaman and Nicobar Islands",
+                    "cities": ["Port Blair", "Diglipur", "Mayabunder", "Rangat", "Car Nicobar"]
+                },
+                {
+                    "name": "Chandigarh",
+                    "cities": ["Chandigarh"]
+                },
+                {
+                    "name": "Dadra and Nagar Haveli and Daman and Diu",
+                    "cities": ["Daman", "Diu", "Silvassa", "Amli", "Naroli"]
+                },
+                {
+                    "name": "Delhi",
+                    "cities": ["New Delhi", "Delhi", "Dwarka", "Rohini", "Karol Bagh"]
+                },
+                {
+                    "name": "Jammu and Kashmir",
+                    "cities": ["Srinagar", "Jammu", "Anantnag", "Baramulla", "Kupwara"]
+                },
+                {
+                    "name": "Ladakh",
+                    "cities": ["Leh", "Kargil", "Diskit", "Nubra", "Zanskar"]
+                },
+                {
+                    "name": "Lakshadweep",
+                    "cities": ["Kavaratti", "Agatti", "Amini", "Andrott", "Kalpeni"]
+                },
+                {
+                    "name": "Puducherry",
+                    "cities": ["Puducherry", "Karaikal", "Mahe", "Yanam", "Oulgaret"]
+                }
+            ]
+        },
+        {
+            "country": "South Africa",
+            "iso": "ZA",
+            "states": [
+                {
+                    "name": "Eastern Cape",
+                    "cities": ["Gqeberha", "East London", "Mthatha", "Grahamstown", "Queenstown"]
+                },
+                {
+                    "name": "Free State",
+                    "cities": ["Bloemfontein", "Welkom", "Bethlehem", "Sasolburg", "Kroonstad"]
+                },
+                {
+                    "name": "Gauteng",
+                    "cities": ["Johannesburg", "Pretoria", "Soweto", "Sandton", "Benoni"]
+                },
+                {
+                    "name": "KwaZulu-Natal",
+                    "cities": ["Durban", "Pietermaritzburg", "Richards Bay", "Newcastle", "Empangeni"]
+                },
+                {
+                    "name": "Limpopo",
+                    "cities": ["Polokwane", "Thohoyandou", "Tzaneen", "Musina", "Mokopane"]
+                },
+                {
+                    "name": "Mpumalanga",
+                    "cities": ["Nelspruit", "Witbank", "Secunda", "Middelburg", "Standerton"]
+                },
+                {
+                    "name": "North West",
+                    "cities": ["Mahikeng", "Rustenburg", "Klerksdorp", "Potchefstroom", "Brits"]
+                },
+                {
+                    "name": "Northern Cape",
+                    "cities": ["Kimberley", "Upington", "Kuruman", "Springbok", "De Aar"]
+                },
+                {
+                    "name": "Western Cape",
+                    "cities": ["Cape Town", "Stellenbosch", "Paarl", "George", "Worcester"]
+                }
+            ]
+        },
+        {
+            "country": "Brazil",
+            "iso": "BR",
+            "states": [
+                {
+                    "name": "Acre",
+                    "cities": ["Rio Branco", "Cruzeiro do Sul", "Sena Madureira", "Tarauaca", "Brasileia"]
+                },
+                {
+                    "name": "Alagoas",
+                    "cities": ["Maceio", "Arapiraca", "Palmeira dos Indios", "Rio Largo", "Penedo"]
+                },
+                {
+                    "name": "Amapa",
+                    "cities": ["Macapa", "Santana", "Laranjal do Jari", "Oiapoque", "Mazagao"]
+                },
+                {
+                    "name": "Amazonas",
+                    "cities": ["Manaus", "Parintins", "Itacoatiara", "Manacapuru", "Coari"]
+                },
+                {
+                    "name": "Bahia",
+                    "cities": ["Salvador", "Feira de Santana", "Vitoria da Conquista", "Ilheus", "Juazeiro"]
+                },
+                {
+                    "name": "Ceara",
+                    "cities": ["Fortaleza", "Caucaia", "Juazeiro do Norte", "Sobral", "Crato"]
+                },
+                {
+                    "name": "Distrito Federal",
+                    "cities": ["Brasilia", "Taguatinga", "Ceilandia", "Gama", "Sobradinho"]
+                },
+                {
+                    "name": "Espirito Santo",
+                    "cities": ["Vitoria", "Vila Velha", "Serra", "Cariacica", "Linhares"]
+                },
+                {
+                    "name": "Goias",
+                    "cities": ["Goiania", "Anapolis", "Rio Verde", "Aparecida de Goiania", "Catalao"]
+                },
+                {
+                    "name": "Maranhao",
+                    "cities": ["Sao Luis", "Imperatriz", "Caxias", "Bacabal", "Timon"]
+                },
+                {
+                    "name": "Mato Grosso",
+                    "cities": ["Cuiaba", "Varzea Grande", "Rondonopolis", "Sinop", "Tangara da Serra"]
+                },
+                {
+                    "name": "Mato Grosso do Sul",
+                    "cities": ["Campo Grande", "Dourados", "Tres Lagoas", "Corumba", "Ponta Pora"]
+                },
+                {
+                    "name": "Minas Gerais",
+                    "cities": ["Belo Horizonte", "Uberlandia", "Contagem", "Juiz de Fora", "Betim"]
+                },
+                {
+                    "name": "Para",
+                    "cities": ["Belem", "Santarem", "Ananindeua", "Maraba", "Castanhal"]
+                },
+                {
+                    "name": "Paraiba",
+                    "cities": ["Joao Pessoa", "Campina Grande", "Santa Rita", "Patos", "Sousa"]
+                },
+                {
+                    "name": "Parana",
+                    "cities": ["Curitiba", "Londrina", "Maringa", "Ponta Grossa", "Cascavel"]
+                },
+                {
+                    "name": "Pernambuco",
+                    "cities": ["Recife", "Olinda", "Jaboatao dos Guararapes", "Caruaru", "Petrolina"]
+                },
+                {
+                    "name": "Piaui",
+                    "cities": ["Teresina", "Parnaiba", "Picos", "Floriano", "Piripiri"]
+                },
+                {
+                    "name": "Rio de Janeiro",
+                    "cities": [
+                        "Rio de Janeiro",
+                        "Niteroi",
+                        "Petropolis",
+                        "Volta Redonda",
+                        "Campos dos Goytacazes"
+                    ]
+                },
+                {
+                    "name": "Rio Grande do Norte",
+                    "cities": ["Natal", "Mossoro", "Parnamirim", "Caico", "Currais Novos"]
+                },
+                {
+                    "name": "Rio Grande do Sul",
+                    "cities": ["Porto Alegre", "Caxias do Sul", "Pelotas", "Santa Maria", "Passo Fundo"]
+                },
+                {
+                    "name": "Rondonia",
+                    "cities": ["Porto Velho", "Ji-Parana", "Ariquemes", "Vilhena", "Cacoal"]
+                },
+                {
+                    "name": "Roraima",
+                    "cities": ["Boa Vista", "Rorainopolis", "Caracarai", "Mucajai", "Alto Alegre"]
+                },
+                {
+                    "name": "Santa Catarina",
+                    "cities": ["Florianopolis", "Joinville", "Blumenau", "Chapeco", "Criciuma"]
+                },
+                {
+                    "name": "Sao Paulo",
+                    "cities": ["Sao Paulo", "Campinas", "Santos", "Sao Jose dos Campos", "Ribeirao Preto"]
+                },
+                {
+                    "name": "Sergipe",
+                    "cities": ["Aracaju", "Nossa Senhora do Socorro", "Lagarto", "Itabaiana", "Estancia"]
+                },
+                {
+                    "name": "Tocantins",
+                    "cities": ["Palmas", "Araguaina", "Gurupi", "Porto Nacional", "Paraiso do Tocantins"]
+                }
+            ]
+        },
+        {
+            "country": "Japan",
+            "iso": "JP",
+            "states": [
+                {
+                    "name": "Hokkaido",
+                    "cities": ["Sapporo", "Hakodate", "Asahikawa", "Obihiro", "Kushiro"]
+                },
+                {
+                    "name": "Aomori",
+                    "cities": ["Aomori", "Hachinohe", "Hirosaki", "Towada", "Mutsu"]
+                },
+                {
+                    "name": "Iwate",
+                    "cities": ["Morioka", "Ichinoseki", "Kitakami", "Oshu", "Hanamaki"]
+                },
+                {
+                    "name": "Miyagi",
+                    "cities": ["Sendai", "Ishinomaki", "Osaki", "Kesennuma", "Natori"]
+                },
+                {
+                    "name": "Akita",
+                    "cities": ["Akita", "Yokote", "Odate", "Noshiro", "Daisen"]
+                },
+                {
+                    "name": "Yamagata",
+                    "cities": ["Yamagata", "Tsuruoka", "Sakata", "Tendo", "Yonezawa"]
+                },
+                {
+                    "name": "Fukushima",
+                    "cities": ["Fukushima", "Koriyama", "Iwaki", "Aizuwakamatsu", "Sukagawa"]
+                },
+                {
+                    "name": "Ibaraki",
+                    "cities": ["Mito", "Tsukuba", "Hitachi", "Tsuchiura", "Koga"]
+                },
+                {
+                    "name": "Tochigi",
+                    "cities": ["Utsunomiya", "Oyama", "Tochigi", "Sano", "Nikko"]
+                },
+                {
+                    "name": "Gunma",
+                    "cities": ["Maebashi", "Takasaki", "Ota", "Isesaki", "Kiryu"]
+                },
+                {
+                    "name": "Saitama",
+                    "cities": ["Saitama", "Kawaguchi", "Koshigaya", "Tokorozawa", "Kasukabe"]
+                },
+                {
+                    "name": "Chiba",
+                    "cities": ["Chiba", "Funabashi", "Matsudo", "Ichikawa", "Narita"]
+                },
+                {
+                    "name": "Tokyo",
+                    "cities": ["Tokyo", "Hachioji", "Machida", "Tachikawa", "Fuchu"]
+                },
+                {
+                    "name": "Kanagawa",
+                    "cities": ["Yokohama", "Kawasaki", "Sagamihara", "Yokosuka", "Fujisawa"]
+                },
+                {
+                    "name": "Niigata",
+                    "cities": ["Niigata", "Nagaoka", "Joetsu", "Sanjo", "Kashiwazaki"]
+                },
+                {
+                    "name": "Toyama",
+                    "cities": ["Toyama", "Takaoka", "Imizu", "Nanto", "Uozu"]
+                },
+                {
+                    "name": "Ishikawa",
+                    "cities": ["Kanazawa", "Komatsu", "Hakusan", "Nanao", "Kaga"]
+                },
+                {
+                    "name": "Fukui",
+                    "cities": ["Fukui", "Sakai", "Echizen", "Obama", "Sabae"]
+                },
+                {
+                    "name": "Yamanashi",
+                    "cities": ["Kofu", "Fujiyoshida", "Kai", "Minami-Alps", "Fuefuki"]
+                },
+                {
+                    "name": "Nagano",
+                    "cities": ["Nagano", "Matsumoto", "Ueda", "Iida", "Suwa"]
+                },
+                {
+                    "name": "Gifu",
+                    "cities": ["Gifu", "Ogaki", "Kakamigahara", "Tajimi", "Takayama"]
+                },
+                {
+                    "name": "Shizuoka",
+                    "cities": ["Shizuoka", "Hamamatsu", "Fuji", "Numazu", "Fujinomiya"]
+                },
+                {
+                    "name": "Aichi",
+                    "cities": ["Nagoya", "Toyota", "Okazaki", "Ichinomiya", "Kasugai"]
+                },
+                {
+                    "name": "Mie",
+                    "cities": ["Tsu", "Yokkaichi", "Suzuka", "Ise", "Matsusaka"]
+                },
+                {
+                    "name": "Shiga",
+                    "cities": ["Otsu", "Hikone", "Kusatsu", "Nagahama", "Omihachiman"]
+                },
+                {
+                    "name": "Kyoto",
+                    "cities": ["Kyoto", "Uji", "Kameoka", "Maizuru", "Fukuchiyama"]
+                },
+                {
+                    "name": "Osaka",
+                    "cities": ["Osaka", "Sakai", "Higashiosaka", "Takatsuki", "Hirakata"]
+                },
+                {
+                    "name": "Hyogo",
+                    "cities": ["Kobe", "Himeji", "Nishinomiya", "Amagasaki", "Akashi"]
+                },
+                {
+                    "name": "Nara",
+                    "cities": ["Nara", "Yamatokoriyama", "Tenri", "Kashihara", "Ikoma"]
+                },
+                {
+                    "name": "Wakayama",
+                    "cities": ["Wakayama", "Tanabe", "Hashimoto", "Kinokawa", "Shingu"]
+                },
+                {
+                    "name": "Tottori",
+                    "cities": ["Tottori", "Yonago", "Kurayoshi", "Sakaiminato", "Misasa"]
+                },
+                {
+                    "name": "Shimane",
+                    "cities": ["Matsue", "Izumo", "Hamada", "Masuda", "Oda"]
+                },
+                {
+                    "name": "Okayama",
+                    "cities": ["Okayama", "Kurashiki", "Tsuyama", "Tamano", "Kasaoka"]
+                },
+                {
+                    "name": "Hiroshima",
+                    "cities": ["Hiroshima", "Fukuyama", "Kure", "Onomichi", "Hatsukaichi"]
+                },
+                {
+                    "name": "Yamaguchi",
+                    "cities": ["Shimonoseki", "Yamaguchi", "Ube", "Iwakuni", "Hofu"]
+                },
+                {
+                    "name": "Tokushima",
+                    "cities": ["Tokushima", "Anan", "Naruto", "Komatsushima", "Mima"]
+                },
+                {
+                    "name": "Kagawa",
+                    "cities": ["Takamatsu", "Marugame", "Sakaide", "Kanonji", "Sanuki"]
+                },
+                {
+                    "name": "Ehime",
+                    "cities": ["Matsuyama", "Imabari", "Niihama", "Saijo", "Uwajima"]
+                },
+                {
+                    "name": "Kochi",
+                    "cities": ["Kochi", "Nankoku", "Shimanto", "Susaki", "Aki"]
+                },
+                {
+                    "name": "Fukuoka",
+                    "cities": ["Fukuoka", "Kitakyushu", "Kurume", "Omuta", "Iizuka"]
+                },
+                {
+                    "name": "Saga",
+                    "cities": ["Saga", "Karatsu", "Tosu", "Imari", "Takeo"]
+                },
+                {
+                    "name": "Nagasaki",
+                    "cities": ["Nagasaki", "Sasebo", "Isahaya", "Omura", "Shimabara"]
+                },
+                {
+                    "name": "Kumamoto",
+                    "cities": ["Kumamoto", "Yatsushiro", "Amakusa", "Tamana", "Hitoyoshi"]
+                },
+                {
+                    "name": "Oita",
+                    "cities": ["Oita", "Beppu", "Nakatsu", "Saiki", "Hita"]
+                },
+                {
+                    "name": "Miyazaki",
+                    "cities": ["Miyazaki", "Miyakonojo", "Nobeoka", "Nichinan", "Kobayashi"]
+                },
+                {
+                    "name": "Kagoshima",
+                    "cities": ["Kagoshima", "Kirishima", "Kanoya", "Satsumasendai", "Ibusuki"]
+                },
+                {
+                    "name": "Okinawa",
+                    "cities": ["Naha", "Okinawa", "Uruma", "Ginowan", "Nago"]
+                }
+            ]
+        }
+    ]
+}

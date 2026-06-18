@@ -1,0 +1,53 @@
+import { EventEmitter } from "events";
+import { WebAdapter } from "../adapters/web/playwright";
+import { ApiAdapter } from "../adapters/api/undici";
+import { SessionManager } from "../sessions/manager";
+import { FlowstrideConfig } from "../types";
+import { PluginManager } from "./plugin_manager";
+export interface SmartSelectorToken {
+    rawTarget: string;
+    relation?: "near" | "above" | "under" | "below" | "leftOf" | "rightOf";
+    anchor?: string;
+    inside?: string;
+    index?: number;
+    isRawCSS?: boolean;
+}
+export declare class FlowWorker extends EventEmitter {
+    private config;
+    private web;
+    private api;
+    private store;
+    private sessions;
+    private pluginManager?;
+    private isSilent;
+    private isAborted;
+    private currentStepContext;
+    private currentFileName;
+    private activeAudioPath;
+    private currentCdpSession;
+    private dataGen;
+    private localVariables;
+    private localBrowserSessions;
+    private static globalVariables;
+    private static globalBrowserSessions;
+    private lastApiUrl;
+    constructor(config: FlowstrideConfig, web: WebAdapter, api: ApiAdapter, store: any, sessions: SessionManager, pluginManager?: PluginManager | undefined);
+    private broadcast;
+    private emitLog;
+    private translateError;
+    private captureStepContext;
+    private resolveTextVariables;
+    private resolveTemplateData;
+    private extractFromJsonPath;
+    private processExtractions;
+    private emitApiTelemetry;
+    handleReplayRequest(payload: any): Promise<void>;
+    abort(): void;
+    runBatch(filesToProcess: string[]): Promise<void>;
+    private runScenario;
+    private waitForPipeline;
+    private executeStep;
+    private setupNetworkInterception;
+    private startStreaming;
+    shutdown(): Promise<void>;
+}
