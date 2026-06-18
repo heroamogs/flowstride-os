@@ -24,7 +24,7 @@ Flowstride requires Node.js 18 or higher.
 **1. Install globally (or as a dev dependency in your project):**
 
 ```bash
-npm install -g flowstride
+npm i flowstride --save-dev
 ```
 
 **2. Initialize a new Flowstride workspace:**
@@ -38,14 +38,22 @@ _(This creates the default directory structure (`/flows`, `/reports`, `/plugins`
 **3. Run your first test:**
 
 ```bash
-flowstride run
+npx flowstride run
 
 OR
 
-flowstride run flows/example.flow
+npx flowstride run flows/example.flow
 ```
 
 _(This command executes your test while instantly booting up the local Flowstride Dashboard.)_
+
+**4. Login to Flowstride Cloud:**
+
+Authenticate your local project with your Cloud account to unlock Cloud features after signing up at [cloud.flowstride.io](https://cloud.flowstride.io).
+
+```bash
+npx flowstride login
+```
 
 ---
 
