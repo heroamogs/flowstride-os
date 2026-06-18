@@ -30,7 +30,7 @@ npm i flowstride --save-dev
 **2. Initialize a new Flowstride workspace:**
 
 ```bash
-flowstride init
+npx flowstride init
 ```
 
 _(This creates the default directory structure (`/flows`, `/reports`, `/plugins`) and generates a `example.flow` sample file.)_
