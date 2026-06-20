@@ -1,0 +1,6 @@
+# Keep React dependencies out of the final package
+node_modules/
+
+# FORCIBLY UN-IGNORE THE DIST FOLDER
+!dist/
+!dist/**
