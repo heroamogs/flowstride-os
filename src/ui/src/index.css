@@ -1,0 +1,40 @@
+:root {
+  --fs-bg-base: #0b0e14;
+  --fs-bg-sidebar: #0d1117;
+  --fs-bg-panel: #161b22;
+  --fs-border: #30363d;
+  --fs-accent-purple: #7c3aed;
+  --fs-success: #22c55e;
+  --fs-text-main: #e6edf3;
+  --fs-text-dim: #8b949e;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+  background-color: var(--fs-bg-base);
+  overflow: hidden;
+}
+
+.flexlayout__layout {
+  background: var(--fs-bg-base) !important;
+}
+
+.flexlayout__tab {
+  background: var(--fs-bg-panel) !important;
+  color: white;
+}
+
+.ctrl-btn {
+  background: #21262d;
+  border: 1px solid var(--fs-border);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
