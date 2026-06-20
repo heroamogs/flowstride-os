@@ -35,14 +35,17 @@ npx flowstride init
 
 _(This creates the default directory structure (`/flows`, `/reports`, `/plugins`) and generates a `example.flow` sample file.)_
 
-**3. Install VS Code Extension (Highly Recommended)**
-To get the best developer experience—including syntax highlighting, auto-completion, and native IDE support for .flow files—install our official extension directly via the VS Code CLI:
+**3. Install VS Code Extension (Highly Recommended):**
+
+To get the best developer experience, including syntax highlighting, auto-completion, and native IDE support for .flow files, install our official VS Code extension directly via the VS Code CLI.
+
+Run the command below:
 
 ```bash
 code --install-extension flowstride.flowstride-vscode
 ```
 
-_(Alternatively, you can open the Extensions tab in VS Code and search for Flowstride Automation)_
+_Alternatively, you can open the Extensions tab in VS Code and search for Flowstride Automation_
 
 **4. Run your first test:**
 
