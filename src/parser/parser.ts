@@ -12,12 +12,14 @@ export interface StepNode {
   action: string;
   payload: any;
   line: number;
+  isStop?: boolean;
 }
 
 export interface ScenarioNode {
   name: string;
   declarations: DeclarationNode[];
   steps: StepNode[];
+  isOnly?: boolean;
 }
 
 export interface FeatureNode {
@@ -30,6 +32,10 @@ export class Parser {
   private position = 0;
   private currentBlockDescription = "";
   private stepCounter = 1;
+  private scenarioCounter = 0;
+  private hasOnlyScenario = false;
+  private hasStopInCurrentScenario = false;
+  private currentBlockIsStop = false;
 
   constructor(private tokens: Token[]) {}
 
@@ -106,13 +112,27 @@ export class Parser {
   }
 
   private parseScenario(): ScenarioNode {
-    this.advance();
+    const scenarioToken = this.advance();
+    const isOnly = scenarioToken.value.toLowerCase() === "only.scenario";
+
+    if (isOnly) {
+      if (this.hasOnlyScenario) {
+        throw new Error(
+          `Line ${scenarioToken.line}: You cannot have more than one 'only.Scenario' in a single file.`,
+        );
+      }
+      this.hasOnlyScenario = true;
+    }
+
+    this.hasStopInCurrentScenario = false;
+
     const nameToken = this.consume(
       TokenType.STRING,
       "Scenario must have a description",
     );
     const steps: StepNode[] = [];
     const declarations: DeclarationNode[] = [];
+    this.scenarioCounter++;
     this.stepCounter = 1;
 
     let state: "START" | "GIVEN" | "WHEN" | "THEN" = "START";
@@ -122,6 +142,7 @@ export class Parser {
       hasThen = false;
     let isLocked = false;
     let currentBlockType = "";
+    this.currentBlockIsStop = false;
 
     while (
       !this.isAtEnd() &&
@@ -139,7 +160,22 @@ export class Parser {
           );
 
         const blockToken = this.advance();
-        const blockType = blockToken.value.toLowerCase();
+        let rawBlockType = blockToken.value.toLowerCase();
+
+        if (rawBlockType.startsWith("stop.")) {
+          if (this.hasStopInCurrentScenario) {
+            throw new Error(
+              `Line ${blockToken.line}: You cannot have more than one 'stop.' block in a single scenario.`,
+            );
+          }
+          this.hasStopInCurrentScenario = true;
+          this.currentBlockIsStop = true;
+          rawBlockType = rawBlockType.replace("stop.", "");
+        } else {
+          this.currentBlockIsStop = false;
+        }
+
+        const blockType = rawBlockType;
         let description =
           this.peek().type === TokenType.STRING ? this.advance().value : "";
 
@@ -169,9 +205,12 @@ export class Parser {
         }
 
         currentBlockType = blockType;
+
+        const displayBlockName =
+          blockType.charAt(0).toUpperCase() + blockType.slice(1);
         this.currentBlockDescription = description
-          ? `${blockToken.value} "${description}"`
-          : blockToken.value;
+          ? `${displayBlockName} "${description}"`
+          : displayBlockName;
       } else if (
         token.type === TokenType.COMMAND ||
         token.type === TokenType.ALIAS_COMMAND
@@ -180,6 +219,10 @@ export class Parser {
           throw new Error(`Line ${token.line}: Terminal Lock Violation.`);
         }
         const step = this.parseCommand();
+
+        if (this.currentBlockIsStop) {
+          step.isStop = true;
+        }
 
         if (
           currentBlockType === "and" &&
@@ -204,7 +247,17 @@ export class Parser {
       );
     }
 
-    return { name: nameToken.value, declarations, steps };
+    const scenarioNode: ScenarioNode = {
+      name: nameToken.value,
+      declarations,
+      steps,
+    };
+
+    if (isOnly) {
+      scenarioNode.isOnly = true;
+    }
+
+    return scenarioNode;
   }
 
   private parseSmartSelectorPayload(): string {
@@ -285,7 +338,7 @@ export class Parser {
       }
 
       return {
-        id: `S${this.stepCounter++}`,
+        id: `scenario_${this.scenarioCounter}_S${this.stepCounter++}`,
         blockDescription: this.currentBlockDescription,
         action: "plugin",
         payload: {
@@ -350,6 +403,7 @@ export class Parser {
       autoheal: "autoHeal",
       "mail.getotp": "getOtp",
       extract: "extract",
+      hover: "hover",
     };
 
     const action = actionMap[actionBase] || actionBase;
@@ -361,21 +415,42 @@ export class Parser {
           TokenType.MODIFIER,
           "Expected target after extract",
         );
-        const extTarget = extTargetToken.value.toLowerCase();
+        const extTarget = extTargetToken.value;
 
-        let normalizedTarget = extTarget;
-        if (extTarget === "resbody") normalizedTarget = "resBody";
-        else if (extTarget === "reqbody") normalizedTarget = "reqBody";
-        else if (extTarget === "resheader") normalizedTarget = "resHeader";
-        else if (extTarget === "reqheader") normalizedTarget = "reqHeader";
+        if (extTarget.toLowerCase() === "resbody" && extTarget !== "resBody") {
+          throw new Error(
+            `Syntax Error on line ${extTargetToken.line}: Invalid keyword '${extTarget}'. Flowstride uses strict camelCase. Did you mean 'resBody'?`,
+          );
+        }
+        if (extTarget.toLowerCase() === "reqbody" && extTarget !== "reqBody") {
+          throw new Error(
+            `Syntax Error on line ${extTargetToken.line}: Invalid keyword '${extTarget}'. Flowstride uses strict camelCase. Did you mean 'reqBody'?`,
+          );
+        }
+        if (
+          extTarget.toLowerCase() === "resheader" &&
+          extTarget !== "resHeader"
+        ) {
+          throw new Error(
+            `Syntax Error on line ${extTargetToken.line}: Invalid keyword '${extTarget}'. Flowstride uses strict camelCase. Did you mean 'resHeader'?`,
+          );
+        }
+        if (
+          extTarget.toLowerCase() === "reqheader" &&
+          extTarget !== "reqHeader"
+        ) {
+          throw new Error(
+            `Syntax Error on line ${extTargetToken.line}: Invalid keyword '${extTarget}'. Flowstride uses strict camelCase. Did you mean 'reqHeader'?`,
+          );
+        }
 
-        if (!["resBody", "resHeader", "cookie"].includes(normalizedTarget)) {
+        if (!["resBody", "resHeader", "cookie"].includes(extTarget)) {
           throw new Error(
             `Line ${extTargetToken.line}: Expected 'resBody', 'resHeader', or 'cookie' after extract`,
           );
         }
 
-        payload.target = normalizedTarget;
+        payload.target = extTarget;
         payload.jsonPath = this.consume(
           TokenType.STRING,
           "JSONPath or Key expected",
@@ -472,8 +547,17 @@ export class Parser {
       case "forceClick":
       case "check":
       case "uncheck":
+      case "hover":
         this.consumeOptionalElement(payload);
-        payload.selector = this.parseSmartSelectorPayload();
+        if (["burger", "hamburger"].includes(payload.elementType)) {
+          if (!this.isAtEnd() && this.peek().type === TokenType.STRING) {
+            payload.selector = this.parseSmartSelectorPayload();
+          } else {
+            payload.selector = "smart-burger-fallback";
+          }
+        } else {
+          payload.selector = this.parseSmartSelectorPayload();
+        }
         break;
 
       case "type":
@@ -603,10 +687,23 @@ export class Parser {
 
       case "expect":
         const modToken = this.consume(TokenType.MODIFIER, "Modifier expected");
-        let mod = modToken.value.toLowerCase();
+        const mod = modToken.value;
 
-        if (mod === "resbody") mod = "resBody";
-        if (mod === "resheader") mod = "resHeader";
+        if (mod.toLowerCase() === "resbody" && mod !== "resBody") {
+          throw new Error(
+            `Syntax Error on line ${modToken.line}: Invalid keyword '${mod}'. Flowstride uses strict camelCase. Did you mean 'resBody'?`,
+          );
+        }
+        if (mod.toLowerCase() === "resheader" && mod !== "resHeader") {
+          throw new Error(
+            `Syntax Error on line ${modToken.line}: Invalid keyword '${mod}'. Flowstride uses strict camelCase. Did you mean 'resHeader'?`,
+          );
+        }
+        if (mod.toLowerCase() === "responsetime" && mod !== "responseTime") {
+          throw new Error(
+            `Syntax Error on line ${modToken.line}: Invalid keyword '${mod}'. Flowstride uses strict camelCase. Did you mean 'responseTime'?`,
+          );
+        }
 
         payload.type = mod;
 
@@ -615,7 +712,7 @@ export class Parser {
             TokenType.STRING,
             'Status code expected (e.g., "200")',
           ).value;
-        } else if (mod === "responsetime") {
+        } else if (mod === "responseTime") {
           const conditionToken = this.advance();
           if (conditionToken.value.toLowerCase() !== "lessthan") {
             throw new Error(
@@ -713,7 +810,15 @@ export class Parser {
             payload.fuzzy = true;
           }
           this.consumeOptionalElement(payload);
-          payload.selector = this.parseSmartSelectorPayload();
+          if (["burger", "hamburger"].includes(payload.elementType)) {
+            if (!this.isAtEnd() && this.peek().type === TokenType.STRING) {
+              payload.selector = this.parseSmartSelectorPayload();
+            } else {
+              payload.selector = "smart-burger-fallback";
+            }
+          } else {
+            payload.selector = this.parseSmartSelectorPayload();
+          }
         } else if (mod === "value" || mod === "attribute") {
           this.consumeOptionalElement(payload);
           payload.selector = this.parseSmartSelectorPayload();
@@ -743,7 +848,7 @@ export class Parser {
     }
 
     return {
-      id: `S${this.stepCounter++}`,
+      id: `scenario_${this.scenarioCounter}_S${this.stepCounter++}`,
       blockDescription: this.currentBlockDescription,
       action,
       payload,
@@ -759,9 +864,20 @@ export class Parser {
       if (nextToken.type === TokenType.PREPOSITION && nextVal === "with") {
         this.advance();
         const targetToken = this.advance();
-        const target = targetToken.value.toLowerCase();
+        const target = targetToken.value;
 
-        if (target === "reqheader") {
+        if (target.toLowerCase() === "reqbody" && target !== "reqBody") {
+          throw new Error(
+            `Syntax Error on line ${targetToken.line}: Invalid keyword '${target}'. Flowstride uses strict camelCase. Did you mean 'reqBody'?`,
+          );
+        }
+        if (target.toLowerCase() === "reqheader" && target !== "reqHeader") {
+          throw new Error(
+            `Syntax Error on line ${targetToken.line}: Invalid keyword '${target}'. Flowstride uses strict camelCase. Did you mean 'reqHeader'?`,
+          );
+        }
+
+        if (target === "reqHeader") {
           const hKey = this.consume(
             TokenType.STRING,
             "Header key expected",
@@ -771,7 +887,7 @@ export class Parser {
             "Header value expected",
           ).value;
           payload.headers.push({ key: hKey, value: hVal });
-        } else if (target === "reqbody") {
+        } else if (target === "reqBody") {
           payload.body = this.consume(
             TokenType.STRING,
             "Body content expected",
