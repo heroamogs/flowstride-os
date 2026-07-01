@@ -162,7 +162,11 @@ export class Lexer {
           continue;
         }
 
-        if (lowerIdent === "feature" || lowerIdent === "scenario") {
+        if (
+          lowerIdent === "feature" ||
+          lowerIdent === "scenario" ||
+          lowerIdent === "only.scenario"
+        ) {
           let tempPos = this.position;
           while (
             tempPos < this.input.length &&
@@ -260,6 +264,7 @@ export class Lexer {
             "autoheal",
             "mail.getotp",
             "extract",
+            "hover",
           ];
 
           if (
@@ -285,7 +290,18 @@ export class Lexer {
           }
         }
 
-        if (["given", "when", "then", "and"].includes(lowerIdent)) {
+        if (
+          [
+            "given",
+            "when",
+            "then",
+            "and",
+            "stop.given",
+            "stop.when",
+            "stop.then",
+            "stop.and",
+          ].includes(lowerIdent)
+        ) {
           let tempPos = this.position;
           while (
             tempPos < this.input.length &&
@@ -332,6 +348,7 @@ export class Lexer {
             "flow.autoheal",
             "flow.mail.getotp",
             "flow.extract",
+            "flow.hover",
           ]
             .map((c) => c.toLowerCase())
             .includes(lowerIdent)
@@ -354,14 +371,16 @@ export class Lexer {
             "contains",
             "placeholder",
             "status",
-            "responsetime",
-            "reqbody",
-            "resbody",
-            "reqheader",
-            "resheader",
+            "responseTime",
+            "reqBody",
+            "resBody",
+            "reqHeader",
+            "resHeader",
             "cookie",
             "global",
-          ].includes(lowerIdent)
+          ]
+            .map((c) => c.toLowerCase())
+            .includes(lowerIdent)
         ) {
           tokens.push({
             type: TokenType.MODIFIER,
@@ -379,6 +398,8 @@ export class Lexer {
             "span",
             "image",
             "img",
+            "burger",
+            "hamburger",
           ].includes(lowerIdent)
         ) {
           tokens.push({

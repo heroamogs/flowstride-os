@@ -34,6 +34,7 @@ export interface SmartSelectorToken {
 export class FlowWorker extends EventEmitter {
   private isSilent = process.env.FLOWSTRIDE_PARALLEL === "true";
   private isAborted = false;
+  private isDebugHalted = false;
 
   private currentStepContext: string = "Initializing...";
   private currentFileName: string = "System";
@@ -184,6 +185,7 @@ export class FlowWorker extends EventEmitter {
 
   private extractFromJsonPath(obj: any, path: string): any {
     if (!obj) return undefined;
+    if (!path) return obj;
     const parts = path.replace(/\[(\d+)\]/g, ".$1").split(".");
     let current = obj;
     for (const part of parts) {
@@ -199,10 +201,10 @@ export class FlowWorker extends EventEmitter {
 
     for (const ext of extracts) {
       let val;
-      if (ext.target === "resbody") {
+      if (ext.target === "resBody") {
         val = this.extractFromJsonPath(state.body, ext.jsonPath);
-      } else if (ext.target === "resheader") {
-        val = state.headers?.[ext.jsonPath.toLowerCase()];
+      } else if (ext.target === "resHeader") {
+        val = state.headers?.[(ext.jsonPath || "").toLowerCase()];
       } else if (ext.target === "cookie") {
         const cookies = state.headers?.["set-cookie"];
         if (Array.isArray(cookies)) {
@@ -373,183 +375,233 @@ export class FlowWorker extends EventEmitter {
     this.config.headless = true;
     this.activeAudioPath = undefined;
     this.isAborted = false;
+    this.isDebugHalted = false;
 
-    for (const filePath of filesToProcess) {
-      const content = fs.readFileSync(filePath, "utf8");
-      const audioMatch = content.match(
-        /(?:flow\.)?injectAudio\s+["']([^"']+)["']/i,
-      );
-      if (audioMatch && audioMatch[1]) {
-        const rawPath = audioMatch[1];
-        const absolutePath = path.resolve(process.cwd(), rawPath);
-        if (!fs.existsSync(absolutePath)) {
-          throw new Error(
-            `Pre-launch initialization failed: Audio file not found at ${absolutePath}`,
-          );
-        }
-        this.activeAudioPath = absolutePath;
-        break;
+    const sigintHandler = async () => {
+      if (!this.isSilent) {
+        console.log(
+          chalk.yellow(
+            "\n[Flowstride]: Process interrupted. Gracefully shutting down...",
+          ),
+        );
       }
-    }
-
-    for (const filePath of filesToProcess) {
-      if (this.isAborted) break;
-
-      const fileStartTime = Date.now();
+      this.abort();
+      this.broadcast("SERVER_SHUTDOWN", { message: "Terminal closed." });
       try {
-        const fileName = path.basename(filePath);
-        this.currentFileName = fileName;
+        await this.web.shutdown();
+      } catch (e) {}
+      process.exit(0);
+    };
 
-        this.localVariables = {};
-        this.localBrowserSessions = {};
-        this.api.resetState();
-        this.dataGen = new DataGenerators();
+    process.once("SIGINT", sigintHandler);
 
-        await this.web.initialise(this.activeAudioPath);
-        await this.startStreaming();
-        await this.setupNetworkInterception();
-
+    try {
+      for (const filePath of filesToProcess) {
         const content = fs.readFileSync(filePath, "utf8");
-
-        const hasSessionIntent =
-          content.includes("use session") ||
-          content.includes("use global session");
-        if (!hasSessionIntent) {
-          try {
-            const page = this.web.getPage();
-            if (page) {
-              await page
-                .context()
-                .clearCookies()
-                .catch(() => {});
-              await page
-                .evaluate(() => {
-                  try {
-                    localStorage.clear();
-                  } catch (e) {}
-                  try {
-                    sessionStorage.clear();
-                  } catch (e) {}
-                })
-                .catch(() => {});
-            }
-          } catch (e) {}
+        const audioMatch = content.match(
+          /(?:flow\.)?injectAudio\s+["']([^"']+)["']/i,
+        );
+        if (audioMatch && audioMatch[1]) {
+          const rawPath = audioMatch[1];
+          const absolutePath = path.resolve(process.cwd(), rawPath);
+          if (!fs.existsSync(absolutePath)) {
+            throw new Error(
+              `Pre-launch initialization failed: Audio file not found at ${absolutePath}`,
+            );
+          }
+          this.activeAudioPath = absolutePath;
+          break;
         }
+      }
 
-        if (!this.isSilent)
-          console.log(
-            chalk.blue.bold(`\n[Execution]: Processing file: ${fileName}`),
+      for (const filePath of filesToProcess) {
+        if (this.isAborted || this.isDebugHalted) break;
+
+        const fileStartTime = Date.now();
+        try {
+          const fileName = path.basename(filePath);
+          this.currentFileName = fileName;
+
+          this.localVariables = {};
+          this.localBrowserSessions = {};
+          this.api.resetState();
+          this.dataGen = new DataGenerators();
+
+          await this.web.initialise(this.activeAudioPath);
+          await this.startStreaming();
+          await this.setupNetworkInterception();
+
+          const content = fs.readFileSync(filePath, "utf8");
+
+          const hasSessionIntent =
+            content.includes("use session") ||
+            content.includes("use global session");
+          if (!hasSessionIntent) {
+            try {
+              const page = this.web.getPage();
+              if (page) {
+                await page
+                  .context()
+                  .clearCookies()
+                  .catch(() => {});
+                await page
+                  .evaluate(() => {
+                    try {
+                      localStorage.clear();
+                    } catch (e) {}
+                    try {
+                      sessionStorage.clear();
+                    } catch (e) {}
+                  })
+                  .catch(() => {});
+              }
+            } catch (e) {}
+          }
+
+          if (!this.isSilent)
+            console.log(
+              chalk.blue.bold(`\n[Execution]: Processing file: ${fileName}`),
+            );
+          this.emitLog("FILE_HEADER", "info", fileName, { filePath });
+
+          const features = new Parser(new Lexer(content).tokenise()).parse();
+
+          const hasOnlyMode = features.some((f) =>
+            f.scenarios.some((s) => s.isOnly),
           );
-        this.emitLog("FILE_HEADER", "info", fileName, { filePath });
 
-        const features = new Parser(new Lexer(content).tokenise()).parse();
+          if (hasOnlyMode) {
+            if (!this.isSilent) {
+              console.log(
+                chalk.yellow(
+                  `      > [Debug Mode]: 'only.Scenario' detected. Operating in Ghost Mode.`,
+                ),
+              );
+            }
+            features.forEach((f) => {
+              f.scenarios = f.scenarios.filter((s) => s.isOnly);
+            });
+          }
 
-        for (const f of features) {
+          for (const f of features) {
+            if (this.isAborted || this.isDebugHalted) break;
+            if (f.scenarios.length === 0) continue;
+
+            if (!this.isSilent)
+              console.log(chalk.magenta.bold(`  Feature: ${f.name}`));
+            for (const s of f.scenarios) {
+              if (this.isAborted || this.isDebugHalted) break;
+
+              if (!this.isSilent)
+                console.log(chalk.cyan(`    Scenario: ${s.name}`));
+
+              this.broadcast("RUN_START", {
+                scenarioName: s.name,
+                fileName: this.currentFileName,
+              });
+
+              await this.runScenario(s, f.declarations);
+
+              if (this.isDebugHalted) break;
+
+              await this.web
+                .getPage()
+                .waitForLoadState("load", { timeout: 4000 })
+                .catch(() => {});
+              await this.web
+                .getPage()
+                .waitForLoadState("networkidle", { timeout: 4000 })
+                .catch(() => {});
+              await new Promise((resolve) => setTimeout(resolve, 2000));
+            }
+          }
+
           if (this.isAborted) break;
 
           if (!this.isSilent)
-            console.log(chalk.magenta.bold(`  Feature: ${f.name}`));
-          for (const s of f.scenarios) {
-            if (this.isAborted) break;
+            console.log(
+              chalk.gray("\n[Execution]: Finalizing browser actions..."),
+            );
+          await new Promise((resolve) => setTimeout(resolve, 2000));
 
+          try {
+            const baseName = this.currentFileName.replace(".flow", "");
+            const mockCloudDir = path.join(
+              process.cwd(),
+              ".flowstride",
+              "mock-cloud",
+            );
+            if (!fs.existsSync(mockCloudDir))
+              fs.mkdirSync(mockCloudDir, { recursive: true });
+
+            const targetVideoPath = path.join(mockCloudDir, `${baseName}.webm`);
+
+            await this.web.shutdown(targetVideoPath);
             if (!this.isSilent)
-              console.log(chalk.cyan(`    Scenario: ${s.name}`));
+              console.log(
+                chalk.gray(
+                  `      [Cloud Sync]: Video safely encoded and preserved for ${this.currentFileName}`,
+                ),
+              );
+          } catch (err) {}
 
-            this.broadcast("RUN_START", {
-              scenarioName: s.name,
-              fileName: this.currentFileName,
-            });
+          this.broadcast("FILE_COMPLETE", {
+            fileName: this.currentFileName,
+            duration: Date.now() - fileStartTime,
+          });
+        } catch (e: any) {
+          if (this.isAborted) break;
 
-            await this.runScenario(s, f.declarations);
+          if (!this.isSilent)
+            console.error(
+              chalk.red(
+                `\n[Execution]: Failed processing ${this.currentFileName}: ${e.message}`,
+              ),
+            );
 
-            await this.web
-              .getPage()
-              .waitForLoadState("load", { timeout: 4000 })
-              .catch(() => {});
-            await this.web
-              .getPage()
-              .waitForLoadState("networkidle", { timeout: 4000 })
-              .catch(() => {});
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-          }
+          try {
+            const baseName = this.currentFileName.replace(".flow", "");
+            const mockCloudDir = path.join(
+              process.cwd(),
+              ".flowstride",
+              "mock-cloud",
+            );
+            if (!fs.existsSync(mockCloudDir))
+              fs.mkdirSync(mockCloudDir, { recursive: true });
+
+            const targetVideoPath = path.join(mockCloudDir, `${baseName}.webm`);
+
+            await this.web.shutdown(targetVideoPath);
+            if (!this.isSilent)
+              console.log(
+                chalk.gray(
+                  `      [Cloud Sync]: Video safely encoded and preserved for ${this.currentFileName}`,
+                ),
+              );
+          } catch (err) {}
+
+          this.broadcast("FILE_FAILED", {
+            fileName: this.currentFileName,
+            duration: Date.now() - fileStartTime,
+            error: e.message,
+          });
         }
-
-        if (this.isAborted) break;
-
-        if (!this.isSilent)
-          console.log(
-            chalk.gray("\n[Execution]: Finalizing browser actions..."),
-          );
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-
-        try {
-          const baseName = this.currentFileName.replace(".flow", "");
-          const mockCloudDir = path.join(
-            process.cwd(),
-            ".flowstride",
-            "mock-cloud",
-          );
-          if (!fs.existsSync(mockCloudDir))
-            fs.mkdirSync(mockCloudDir, { recursive: true });
-
-          const targetVideoPath = path.join(mockCloudDir, `${baseName}.webm`);
-
-          await this.web.shutdown(targetVideoPath);
-          if (!this.isSilent)
-            console.log(
-              chalk.gray(
-                `      [Cloud Sync]: Video safely encoded and preserved for ${this.currentFileName}`,
-              ),
-            );
-        } catch (err) {}
-
-        this.broadcast("FILE_COMPLETE", {
-          fileName: this.currentFileName,
-          duration: Date.now() - fileStartTime,
-        });
-      } catch (e: any) {
-        if (this.isAborted) break;
-
-        if (!this.isSilent)
-          console.error(
-            chalk.red(
-              `\n[Execution]: Failed processing ${this.currentFileName}: ${e.message}`,
-            ),
-          );
-
-        try {
-          const baseName = this.currentFileName.replace(".flow", "");
-          const mockCloudDir = path.join(
-            process.cwd(),
-            ".flowstride",
-            "mock-cloud",
-          );
-          if (!fs.existsSync(mockCloudDir))
-            fs.mkdirSync(mockCloudDir, { recursive: true });
-
-          const targetVideoPath = path.join(mockCloudDir, `${baseName}.webm`);
-
-          await this.web.shutdown(targetVideoPath);
-          if (!this.isSilent)
-            console.log(
-              chalk.gray(
-                `      [Cloud Sync]: Video safely encoded and preserved for ${this.currentFileName}`,
-              ),
-            );
-        } catch (err) {}
-
-        this.broadcast("FILE_FAILED", {
-          fileName: this.currentFileName,
-          duration: Date.now() - fileStartTime,
-          error: e.message,
-        });
       }
-    }
 
-    if (!this.isSilent && !this.isAborted)
-      console.log(
-        chalk.green("[Execution]: All suites completed successfully."),
-      );
+      if (!this.isSilent && !this.isAborted) {
+        if (this.isDebugHalted) {
+          console.log(
+            chalk.cyan("\n[Execution]: Test suite halted by debug flag."),
+          );
+        } else {
+          console.log(
+            chalk.green("\n[Execution]: All suites completed successfully."),
+          );
+        }
+      }
+    } finally {
+      process.removeListener("SIGINT", sigintHandler);
+    }
   }
 
   private async runScenario(
@@ -634,6 +686,18 @@ export class FlowWorker extends EventEmitter {
           screenshot: stepContext.screenshot,
           fileName: this.currentFileName,
         });
+
+        if (step.isStop) {
+          if (!this.isSilent) {
+            console.log(
+              chalk.cyan(
+                `      > [Execution]: Debug stop triggered. Halting global execution.`,
+              ),
+            );
+          }
+          this.isDebugHalted = true;
+          break;
+        }
       } catch (e: any) {
         if (this.isAborted) break;
 
@@ -678,6 +742,7 @@ export class FlowWorker extends EventEmitter {
 
         const isUIAction = [
           "click",
+          "hover",
           "type",
           "forceClick",
           "forceType",
@@ -810,11 +875,24 @@ export class FlowWorker extends EventEmitter {
     localDeclarations: DeclarationNode[] = [],
     globalDeclarations: DeclarationNode[] = [],
   ) {
+    if (payload && payload.selector === "smart-burger-fallback") {
+      payload.selector = [
+        'button[aria-label*="menu" i]',
+        '[aria-label*="menu" i]',
+        '[title*="menu" i]',
+        ".bm-burger-button",
+        '[class*="hamburger" i]',
+        '[class*="burger" i]',
+        '[id*="hamburger" i]',
+        '[id*="burger" i]',
+      ].join(", ");
+    }
+
     switch (action) {
       case "extract":
         this.processExtractions([
           {
-            target: payload.target.toLowerCase(),
+            target: payload.target,
             jsonPath: payload.jsonPath,
             variableName: payload.variableName,
             isGlobal: payload.isGlobal,
@@ -1039,6 +1117,9 @@ export class FlowWorker extends EventEmitter {
       case "click":
         await this.web.click(payload.selector, payload.elementType);
         break;
+      case "hover":
+        await this.web.hover(payload.selector, payload.elementType);
+        break;
       case "forceClick":
         await this.web.forceClick(payload.selector, payload.elementType);
         break;
@@ -1114,33 +1195,38 @@ export class FlowWorker extends EventEmitter {
         break;
 
       case "expect":
+        const expectType = payload.type;
+
         if (
-          ["status", "responsetime", "resbody", "resheader", "cookie"].includes(
-            payload.type,
+          ["status", "responseTime", "resBody", "resHeader", "cookie"].includes(
+            expectType,
           )
         ) {
           const apiState = this.api.getState();
 
-          if (payload.type === "status") {
-            if (String(apiState.status) !== String(payload.statusCode))
+          if (expectType === "status") {
+            const expectedStatus = payload.statusCode || payload.value;
+            if (String(apiState.status) !== String(expectedStatus))
               throw new Error(
-                `API Assertion Failed: Expected HTTP status ${payload.statusCode}, but got ${apiState.status}`,
+                `API Assertion Failed: Expected HTTP status ${expectedStatus}, but got ${apiState.status}`,
               );
-          } else if (payload.type === "responsetime") {
-            if (apiState.responseTime > parseInt(payload.threshold, 10))
+          } else if (expectType === "responseTime") {
+            const threshold = payload.threshold || payload.value;
+            if (apiState.responseTime > parseInt(threshold, 10))
               throw new Error(
-                `API Assertion Failed: Expected response time to be less than ${payload.threshold}ms, but got ${apiState.responseTime}ms`,
+                `API Assertion Failed: Expected response time to be less than ${threshold}ms, but got ${apiState.responseTime}ms`,
               );
           } else {
             let actualValue;
-            if (payload.type === "resbody")
+            if (expectType === "resBody")
               actualValue = this.extractFromJsonPath(
                 apiState.body,
                 payload.jsonPath,
               );
-            else if (payload.type === "resheader")
-              actualValue = apiState.headers?.[payload.jsonPath.toLowerCase()];
-            else if (payload.type === "cookie") {
+            else if (expectType === "resHeader")
+              actualValue =
+                apiState.headers?.[(payload.jsonPath || "").toLowerCase()];
+            else if (expectType === "cookie") {
               const cookies = apiState.headers?.["set-cookie"];
               if (Array.isArray(cookies)) {
                 const match = cookies.find((c) =>
@@ -1150,7 +1236,13 @@ export class FlowWorker extends EventEmitter {
               }
             }
 
-            for (const assertion of payload.assertions) {
+            const assertionsArray = Array.isArray(payload.assertions)
+              ? payload.assertions
+              : payload.condition
+                ? [{ condition: payload.condition, value: payload.value }]
+                : [];
+
+            for (const assertion of assertionsArray) {
               const condition = assertion.condition;
               const rawExpected = assertion.value;
               const expectedLower = String(rawExpected || "").toLowerCase();
@@ -1336,21 +1428,21 @@ export class FlowWorker extends EventEmitter {
               }
             }
           }
-        } else if (payload.type === "visible")
+        } else if (expectType === "visible")
           await this.web.expectVisible(payload.selector, payload.elementType);
-        else if (payload.type === "text")
+        else if (expectType === "text")
           await this.web.expectText(
             payload.selector,
             payload.fuzzy,
             payload.elementType,
           );
-        else if (payload.type === "value")
+        else if (expectType === "value")
           await this.web.expectValue(
             payload.selector,
             payload.text,
             payload.elementType,
           );
-        else if (payload.type === "transcript")
+        else if (expectType === "transcript")
           await this.web.expectTranscript(payload.text);
         break;
     }

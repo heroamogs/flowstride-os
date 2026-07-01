@@ -540,6 +540,77 @@ export class WebAdapter {
     await targetLoc.click();
   }
 
+  public async hover(selector: string, elementType?: string): Promise<void> {
+    const loc = await this.getLocator(selector, elementType, false, false);
+    const targetLoc = await this.checkAmbiguity(loc, selector);
+
+    await targetLoc.waitFor({ state: "visible" });
+    await targetLoc.scrollIntoViewIfNeeded();
+
+    // 1. Accessibility WAI-ARIA Hack (Focus)
+    await targetLoc.focus({ timeout: 3000 }).catch(() => {});
+    await targetLoc
+      .evaluate((node: HTMLElement) => {
+        if (typeof node.focus === "function") node.focus();
+      })
+      .catch(() => {});
+
+    // 2. Get Exact Center Coordinates for Physical Move
+    let box = null;
+    try {
+      box = await targetLoc.boundingBox({ timeout: 3000 });
+    } catch (e) {} // Catch in case it mutated instantly during focus
+
+    if (box) {
+      const centerX = box.x + box.width / 2;
+      const centerY = box.y + box.height / 2;
+
+      // Physically drag the mouse to the element to satisfy Hover Intent APIs
+      await this.page!.mouse.move(centerX, centerY, { steps: 5 });
+    }
+
+    // 3. Playwright Native Hover Backup (Caught to prevent mutation crashes)
+    await targetLoc.hover({ force: true, timeout: 3000 }).catch(() => {});
+
+    // 4. The Ultimate Wakeup Call: Synthesize Full Coordinate-Loaded Events
+    await targetLoc
+      .evaluate((node: Element) => {
+        const rect = node.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+
+        const events = [
+          "pointerover",
+          "pointerenter",
+          "mouseover",
+          "mouseenter",
+          "mousemove",
+        ];
+        events.forEach((type) => {
+          node.dispatchEvent(
+            new MouseEvent(type, {
+              view: window,
+              bubbles: true,
+              cancelable: true,
+              clientX: x,
+              clientY: y,
+              screenX: x,
+              screenY: y,
+            }),
+          );
+        });
+      })
+      .catch(() => {});
+
+    // 5. We perform a programmatic click that won't trigger W3C navigation if handled by React toggles
+    await targetLoc
+      .click({ delay: 50, force: true, timeout: 3000 })
+      .catch(() => {});
+
+    // 6. The Paint Buffer
+    await this.page!.waitForTimeout(600);
+  }
+
   public async type(
     selector: string,
 

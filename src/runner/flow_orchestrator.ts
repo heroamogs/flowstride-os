@@ -15,6 +15,7 @@ export class FlowOrchestrator {
   private globalTestScenarios: any[] = [];
   private stepStatusRegistry: Map<string, string> = new Map();
   private pdfGenerator: PdfGenerator;
+  private disconnectTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private worker: FlowWorker,
@@ -227,6 +228,11 @@ export class FlowOrchestrator {
       this.wss = new WebSocketServer({ server: this.httpServer });
 
       this.wss.on("connection", (ws) => {
+        if (this.disconnectTimer) {
+          clearTimeout(this.disconnectTimer);
+          this.disconnectTimer = null;
+        }
+
         ws.on("message", async (message) => {
           const data = JSON.parse(message.toString());
 
@@ -265,6 +271,25 @@ export class FlowOrchestrator {
             this.forwardToDashboard("RUN_COMPLETE", { status: "aborted" });
           }
         });
+
+        ws.on("close", () => {
+          if (this.wss && this.wss.clients.size === 0) {
+            this.disconnectTimer = setTimeout(async () => {
+              console.log(
+                chalk.yellow(
+                  "\n[Flowstride]: Dashboard disconnected. Shutting down framework...",
+                ),
+              );
+              this.worker.abort();
+              try {
+                await this.worker.shutdown();
+              } catch (e) {}
+              this.wss?.close();
+              this.httpServer?.close();
+              process.exit(0);
+            }, 3000);
+          }
+        });
       });
 
       this.httpServer.listen(0, async () => {
@@ -294,12 +319,6 @@ export class FlowOrchestrator {
         console.log(chalk.green("[Dashboard]: Connected to UI!"));
 
         await this.executeTestRun(targetPath);
-      });
-
-      process.on("SIGINT", () => {
-        this.wss?.close();
-        this.httpServer?.close();
-        process.exit();
       });
     } catch (e: any) {
       throw e;
