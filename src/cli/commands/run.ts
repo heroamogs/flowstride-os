@@ -89,7 +89,11 @@ export async function runAction(
   }
 
   const config: FlowstrideConfig = {
-    headless: isCI ? true : (options.headless ?? localConfig.headless ?? true),
+    headless: isCI
+      ? true
+      : options.headed
+        ? false
+        : (localConfig.headless ?? true),
     timeout: localConfig.timeout ?? 30000,
     bail: options.bail ?? localConfig.bail ?? false,
     baseUrl: process.env.BASE_URL ?? localConfig.baseUrl,
@@ -136,9 +140,6 @@ export async function runAction(
   const vault = new PersistentVault(root);
   const sessions = new SessionManager(web, api, vault);
 
-  // ==========================================
-  // DYNAMIC ENGINE ROUTER (The Plugin Handoff)
-  // ==========================================
   let ActiveFlowWorker: any = FlowWorker;
   let ActiveFlowOrchestrator: any = FlowOrchestrator;
   let engineMode = "Open Source";
@@ -162,7 +163,6 @@ export async function runAction(
     "flow_orchestrator.js",
   );
 
-  // We only attempt to load the Pro Engine if the DRM Bouncer (index.ts) did NOT force OS Mode
   if (
     !options.forceOS &&
     fs.existsSync(proWorkerPath) &&
@@ -183,7 +183,6 @@ export async function runAction(
   }
 
   console.log(`\n[Engine]: Booting Flowstride in ${engineMode} mode...`);
-  // ==========================================
 
   const worker = new ActiveFlowWorker(
     config,

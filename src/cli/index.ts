@@ -19,7 +19,7 @@ const API_BASE =
 program
   .name("flowstride")
   .description("Flowstride: The Enterprise Flow-First Automation CLI")
-  .version("1.0.11");
+  .version("1.0.14");
 
 program
   .command("init")
@@ -339,13 +339,8 @@ program
   .command("run [targetPath]")
   .description("Execute all .flow automation journeys in the ./flows directory")
   .option("-b, --bail", "Stop execution on first failure", false)
-  .option("--headed", "Run browser in headed mode", false)
-  .option(
-    "--headless <boolean>",
-    "Run browser in headless mode",
-    (val: string) => val === "true",
-    true,
-  )
+  .option("--headed", "Run browser in headed mode")
+  .option("--headless", "Run browser in headless mode")
   .option(
     "--workers <number>",
     "Number of parallel workers to spawn (Pro feature)",

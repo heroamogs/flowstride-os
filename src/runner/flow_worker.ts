@@ -133,7 +133,11 @@ export class FlowWorker extends EventEmitter {
     return context;
   }
 
-  private resolveTextVariables(text: string): string {
+  private resolveTextVariables(text: string | any): string | any {
+    if (typeof text !== "string") {
+      return text;
+    }
+
     let resolved = text;
 
     resolved = resolved.replace(
@@ -275,10 +279,19 @@ export class FlowWorker extends EventEmitter {
       rawBodyString = typeof body === "string" ? body : null;
     }
 
+    let formattedHeaders: Record<string, string> = {};
+    if (Array.isArray(headers)) {
+      headers.forEach((h: any) => {
+        if (h && h.key) formattedHeaders[h.key] = h.value;
+      });
+    } else if (headers && typeof headers === "object") {
+      formattedHeaders = headers;
+    }
+
     const curlString = this.web.synthesizeCurl(
       method,
       cleanUrl,
-      headers || {},
+      formattedHeaders,
       rawBodyString,
     );
 
@@ -289,7 +302,7 @@ export class FlowWorker extends EventEmitter {
       {
         method: method.toUpperCase(),
         url: cleanUrl,
-        requestHeaders: headers,
+        requestHeaders: formattedHeaders,
         requestBody: parsedReqBody,
         responseStatus: state.status,
         responseHeaders: state.headers,
@@ -372,7 +385,15 @@ export class FlowWorker extends EventEmitter {
   }
 
   public async runBatch(filesToProcess: string[]): Promise<void> {
-    this.config.headless = true;
+    // this.config.headless = true;
+    const isCliHeadless = process.argv.includes("--headless");
+
+    if (isCliHeadless) {
+      this.config.headless = true;
+    } else if (this.config.headless === undefined) {
+      this.config.headless = false;
+    }
+
     this.activeAudioPath = undefined;
     this.isAborted = false;
     this.isDebugHalted = false;

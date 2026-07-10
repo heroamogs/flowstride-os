@@ -292,33 +292,62 @@ export class FlowOrchestrator {
         });
       });
 
-      this.httpServer.listen(0, async () => {
-        const address = this.httpServer?.address();
-        const port =
-          typeof address === "object" && address !== null ? address.port : null;
+      return new Promise((resolve, reject) => {
+        this.httpServer!.listen(0, async () => {
+          try {
+            const address = this.httpServer?.address();
+            const port =
+              typeof address === "object" && address !== null
+                ? address.port
+                : null;
 
-        if (!port) {
-          console.error(
-            chalk.red("\n[Error]: Could not bind to an available port."),
-          );
-          process.exit(1);
-        }
+            if (!port) {
+              console.error(
+                chalk.red("\n[Error]: Could not bind to an available port."),
+              );
+              return reject(new Error("No port available"));
+            }
 
-        const localUrl = `http://localhost:${port}`;
-        const { default: open } = await import("open");
-        await open(localUrl);
+            const localUrl = `http://localhost:${port}`;
+            console.log(
+              chalk.yellow(
+                `\n[Dashboard]: Local server running at ${localUrl}`,
+              ),
+            );
 
-        console.log(
-          chalk.yellow(`\n[Dashboard]: Local server running at ${localUrl}`),
-        );
-        console.log(chalk.yellow("[Dashboard]: Waiting for UI connection..."));
+            const isStrictHeadless =
+              process.argv.includes("--headless") ||
+              !!process.env.CI ||
+              !!process.env.GITHUB_ACTIONS ||
+              !!process.env.FLOWSTRIDE_API_KEY;
 
-        while (this.wss!.clients.size === 0)
-          await new Promise((r) => setTimeout(r, 250));
+            if (!isStrictHeadless) {
+              const { default: open } = await import("open");
+              await open(localUrl);
 
-        console.log(chalk.green("[Dashboard]: Connected to UI!"));
+              console.log(
+                chalk.yellow("[Dashboard]: Waiting for UI connection..."),
+              );
 
-        await this.executeTestRun(targetPath);
+              while (this.wss!.clients.size === 0)
+                await new Promise((r) => setTimeout(r, 250));
+
+              console.log(chalk.green("[Dashboard]: Connected to UI!"));
+            } else {
+              console.log(
+                chalk.gray(
+                  "[Dashboard]: Headless mode active. Bypassing UI auto-launch...",
+                ),
+              );
+            }
+
+            await this.executeTestRun(targetPath);
+
+            resolve(undefined);
+          } catch (err) {
+            reject(err);
+          }
+        });
       });
     } catch (e: any) {
       throw e;
