@@ -4,6 +4,8 @@
 
 Flowstride OS combines the human-readable structure of Behavior-Driven Development (BDD) with the raw execution power of Playwright. It allows QA engineers and developers to write robust, maintainable UI and API tests using an intuitive domain-specific language (DSL), while providing a rich, interactive React dashboard to monitor, debug, and replay test runs in real time.
 
+[Documentation](https://docs.flowstride.io/)
+
 ---
 
 ## Why Flowstride?

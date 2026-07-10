@@ -6,7 +6,7 @@ We take the security of Flowstride OS and our users very seriously.
 
 If you discover a security vulnerability, we kindly ask that you **do not** report it by opening a public GitHub Issue. Instead, please practice responsible disclosure by contacting us privately.
 
-**Please report security issues via email to:** security@flowstride.cloud
+**Please report security issues via email to:** security@flowstride.io
 
 ### What to include in your report
 
