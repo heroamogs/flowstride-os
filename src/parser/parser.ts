@@ -522,7 +522,6 @@ export class Parser {
           "Endpoint URL expected",
         ).value;
 
-        // --- ENSURE ARRAY FORMAT FOR API CLIENT ---
         payload.headers = [];
 
         this.parseApiModifiers(payload);
@@ -539,7 +538,6 @@ export class Parser {
           "Endpoint URL expected",
         ).value;
 
-        // --- ENSURE ARRAY FORMAT FOR API CLIENT ---
         payload.headers = [];
 
         this.parseApiModifiers(payload);
@@ -884,19 +882,16 @@ export class Parser {
         }
 
         if (target === "reqHeader") {
-          // --- THE NEW MULTI-FORMAT HEADER PARSER ---
           const firstToken = this.consume(
             TokenType.STRING,
             "Header key or JSON block expected",
           );
 
-          // Lookahead: If the next token is ALSO a string, use the legacy Key-Value parsing
           if (!this.isAtEnd() && this.peek().type === TokenType.STRING) {
             const hKey = firstToken.value;
             const hVal = this.advance().value;
             payload.headers.push({ key: hKey, value: hVal });
           } else {
-            // Otherwise, it must be the new multi-line JSON Block format
             try {
               const headerObj = JSON.parse(firstToken.value);
               if (
@@ -906,7 +901,7 @@ export class Parser {
               ) {
                 throw new Error("Parsed JSON is not a Key-Value object.");
               }
-              // Loop through the parsed block and push them into the array for the API client
+
               for (const [k, v] of Object.entries(headerObj)) {
                 payload.headers.push({ key: k, value: String(v) });
               }
@@ -916,7 +911,6 @@ export class Parser {
               );
             }
           }
-          // ------------------------------------------
         } else if (target === "reqBody") {
           payload.body = this.consume(
             TokenType.STRING,

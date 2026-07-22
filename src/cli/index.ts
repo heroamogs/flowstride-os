@@ -8,7 +8,7 @@ import * as path from "path";
 import * as os from "os";
 import * as tar from "tar";
 import { execSync } from "child_process";
-import { input, password, confirm } from "@inquirer/prompts";
+import { password, confirm } from "@inquirer/prompts";
 import chalk from "chalk";
 import ora from "ora";
 
@@ -19,7 +19,7 @@ const API_BASE =
 program
   .name("flowstride")
   .description("Flowstride: The Enterprise Flow-First Automation CLI")
-  .version("1.0.14");
+  .version("1.0.16");
 
 program
   .command("init")
@@ -31,48 +31,62 @@ program
 program
   .command("login")
   .description("Authenticate this machine with Flowstride Enterprise Cloud")
-  .action(async () => {
+  .option("-t, --token <token>", "Enterprise Developer Token")
+  .option(
+    "-g, --global",
+    "Save the token globally for all projects on this machine",
+    false,
+  )
+  .action(async (options) => {
     const localPackageJsonPath = path.join(process.cwd(), "package.json");
-    if (!fs.existsSync(localPackageJsonPath)) {
-      console.error(
-        chalk.red(
-          "✖ Error: Please navigate to a valid Flowstride project directory before logging in.",
-        ),
-      );
-      process.exit(1);
-    }
 
-    const pkg = JSON.parse(fs.readFileSync(localPackageJsonPath, "utf8"));
-    const deps = {
-      ...(pkg.dependencies || {}),
-      ...(pkg.devDependencies || {}),
-    };
+    // Enforce valid project directory ONLY if doing a local login
+    if (!options.global) {
+      if (!fs.existsSync(localPackageJsonPath)) {
+        console.error(
+          chalk.red(
+            "✖ Error: Please navigate to a valid Flowstride project directory before logging in locally, or use --global.",
+          ),
+        );
+        process.exit(1);
+      }
 
-    if (!deps["flowstride"] && !deps["flowstride-os"]) {
-      console.error(
-        chalk.red(
-          "✖ Error: Please navigate to a valid Flowstride project directory before logging in.",
-        ),
-      );
-      process.exit(1);
+      const pkg = JSON.parse(fs.readFileSync(localPackageJsonPath, "utf8"));
+      const deps = {
+        ...(pkg.dependencies || {}),
+        ...(pkg.devDependencies || {}),
+      };
+
+      if (!deps["flowstride"] && !deps["flowstride-os"]) {
+        console.error(
+          chalk.red(
+            "✖ Error: Please navigate to a valid Flowstride project directory before logging in locally, or use --global.",
+          ),
+        );
+        process.exit(1);
+      }
     }
 
     console.log(chalk.bold.blue("\n🌐 Flowstride Enterprise Cloud Sync\n"));
 
-    let authHeader = "";
-    if (process.env.FLOWSTRIDE_API_KEY) {
+    let token = process.env.FLOWSTRIDE_TOKEN || options.token;
+
+    if (process.env.FLOWSTRIDE_TOKEN) {
       console.log(
         chalk.yellow(
-          "🤖 CI/CD Environment Detected. Authenticating via API Key...",
+          "🤖 CI/CD Environment Detected. Authenticating via FLOWSTRIDE_TOKEN...",
         ),
       );
-      authHeader = `Bearer ${process.env.FLOWSTRIDE_API_KEY}`;
-    } else {
-      const userEmail = await input({
-        message: "Enter your Flowstride email:",
+    } else if (!token) {
+      token = await password({
+        message: "Paste your Enterprise Developer Token:",
+        mask: "*",
       });
-      const userPass = await password({ message: "Enter your password:" });
-      authHeader = `Basic ${Buffer.from(`${userEmail}:${userPass}`).toString("base64")}`;
+    }
+
+    if (!token || token.trim().length === 0) {
+      console.error(chalk.red("✖ Error: A valid Developer Token is required."));
+      process.exit(1);
     }
 
     const deviceName = os.hostname();
@@ -83,7 +97,7 @@ program
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: authHeader,
+          Authorization: `Bearer ${token.trim()}`,
         },
         body: JSON.stringify({ deviceName }),
       });
@@ -92,24 +106,29 @@ program
 
       if (!response.ok) {
         spinner.fail(
-          chalk.red(`Authentication Failed: ${data.error || "Unknown error"}`),
+          chalk.red(
+            `Authentication Failed: ${data.error || "Invalid token or network error"}`,
+          ),
         );
         process.exit(1);
       }
 
       spinner.succeed(chalk.green("Authentication Successful!"));
 
-      const configDir = path.join(process.cwd(), ".flowstride", "login");
+      const configDir = options.global
+        ? path.join(os.homedir(), ".flowstride")
+        : path.join(process.cwd(), ".flowstride");
+
       if (!fs.existsSync(configDir)) {
         fs.mkdirSync(configDir, { recursive: true });
       }
 
-      const credentialsPath = path.join(configDir, "login.json");
+      const credentialsPath = path.join(configDir, "credentials.json");
       fs.writeFileSync(
         credentialsPath,
         JSON.stringify(
           {
-            machineToken: data.machineToken,
+            machineToken: data.machineToken || token.trim(),
             workspaceId: data.workspaceId,
             deviceName: deviceName,
             syncedAt: new Date().toISOString(),
@@ -119,8 +138,11 @@ program
         ),
       );
 
+      const scopeText = options.global ? "GLOBALLY" : "LOCALLY to this project";
       console.log(
-        chalk.gray(`\nCredentials securely scoped to ${credentialsPath}`),
+        chalk.gray(
+          `\nCredentials securely scoped ${scopeText} at: ${credentialsPath}`,
+        ),
       );
 
       if (data.isProEligible) {
@@ -140,7 +162,7 @@ program
         if (!fs.existsSync(nodeModulesPath)) {
           let installPro = true;
 
-          if (!process.env.FLOWSTRIDE_API_KEY && !process.env.CI) {
+          if (!process.env.FLOWSTRIDE_TOKEN && !process.env.CI) {
             installPro = await confirm({
               message:
                 "The Pro Engine is not installed in this project. Would you like Flowstride to automatically install it now?",
@@ -159,7 +181,7 @@ program
                 `${API_BASE}/api/workspace/download-pro`,
                 {
                   method: "GET",
-                  headers: { Authorization: `Bearer ${data.machineToken}` },
+                  headers: { Authorization: `Bearer ${token.trim()}` },
                 },
               );
 
@@ -257,13 +279,40 @@ program
     "Display the current Flowstride CLI authentication and engine tier",
   )
   .action(async () => {
-    let token = process.env.FLOWSTRIDE_API_KEY || null;
-    const credentialsPath = path.join(
+    let token = process.env.FLOWSTRIDE_TOKEN || null;
+    const localCredentialsPath = path.join(
       process.cwd(),
       ".flowstride",
-      "login",
-      "login.json",
+      "credentials.json",
     );
+    const globalCredentialsPath = path.join(
+      os.homedir(),
+      ".flowstride",
+      "credentials.json",
+    );
+
+    let activeCredentialsPath = localCredentialsPath; // Default for cleanup
+
+    if (!token) {
+      if (fs.existsSync(localCredentialsPath)) {
+        activeCredentialsPath = localCredentialsPath;
+        try {
+          const credentials = JSON.parse(
+            fs.readFileSync(localCredentialsPath, "utf8"),
+          );
+          token = credentials.machineToken;
+        } catch (err) {}
+      } else if (fs.existsSync(globalCredentialsPath)) {
+        activeCredentialsPath = globalCredentialsPath;
+        try {
+          const credentials = JSON.parse(
+            fs.readFileSync(globalCredentialsPath, "utf8"),
+          );
+          token = credentials.machineToken;
+        } catch (err) {}
+      }
+    }
+
     const nodeModulesPath = path.join(
       process.cwd(),
       "node_modules",
@@ -271,21 +320,13 @@ program
       "pro",
     );
 
-    if (!token && fs.existsSync(credentialsPath)) {
-      try {
-        const credentials = JSON.parse(
-          fs.readFileSync(credentialsPath, "utf8"),
-        );
-        token = credentials.machineToken;
-      } catch (err) {}
-    }
-
     if (
-      !process.env.FLOWSTRIDE_API_KEY &&
+      !process.env.FLOWSTRIDE_TOKEN &&
       token &&
       !fs.existsSync(nodeModulesPath)
     ) {
-      if (fs.existsSync(credentialsPath)) fs.unlinkSync(credentialsPath);
+      if (fs.existsSync(activeCredentialsPath))
+        fs.unlinkSync(activeCredentialsPath);
       token = null;
     }
 
@@ -306,7 +347,8 @@ program
             "🔴 AUTH EXPIRED: Your device session was revoked or expired.",
           ),
         );
-        if (fs.existsSync(credentialsPath)) fs.unlinkSync(credentialsPath);
+        if (fs.existsSync(activeCredentialsPath))
+          fs.unlinkSync(activeCredentialsPath);
       } else if (response.ok) {
         const data = await response.json();
         const tier = data.tier.toUpperCase();
@@ -352,14 +394,41 @@ program
         targetPath = undefined;
       }
 
-      let token = process.env.FLOWSTRIDE_API_KEY || null;
+      let token = process.env.FLOWSTRIDE_TOKEN || null;
       let forceOS = false;
-      const credentialsPath = path.join(
+
+      const localCredentialsPath = path.join(
         process.cwd(),
         ".flowstride",
-        "login",
-        "login.json",
+        "credentials.json",
       );
+      const globalCredentialsPath = path.join(
+        os.homedir(),
+        ".flowstride",
+        "credentials.json",
+      );
+      let activeCredentialsPath = localCredentialsPath;
+
+      if (!token) {
+        if (fs.existsSync(localCredentialsPath)) {
+          activeCredentialsPath = localCredentialsPath;
+          try {
+            const credentials = JSON.parse(
+              fs.readFileSync(localCredentialsPath, "utf8"),
+            );
+            token = credentials.machineToken;
+          } catch (err) {}
+        } else if (fs.existsSync(globalCredentialsPath)) {
+          activeCredentialsPath = globalCredentialsPath;
+          try {
+            const credentials = JSON.parse(
+              fs.readFileSync(globalCredentialsPath, "utf8"),
+            );
+            token = credentials.machineToken;
+          } catch (err) {}
+        }
+      }
+
       const nodeModulesPath = path.join(
         process.cwd(),
         "node_modules",
@@ -367,21 +436,13 @@ program
         "pro",
       );
 
-      if (!token && fs.existsSync(credentialsPath)) {
-        try {
-          const credentials = JSON.parse(
-            fs.readFileSync(credentialsPath, "utf8"),
-          );
-          token = credentials.machineToken;
-        } catch (err) {}
-      }
-
       if (
-        !process.env.FLOWSTRIDE_API_KEY &&
+        !process.env.FLOWSTRIDE_TOKEN &&
         token &&
         !fs.existsSync(nodeModulesPath)
       ) {
-        if (fs.existsSync(credentialsPath)) fs.unlinkSync(credentialsPath);
+        if (fs.existsSync(activeCredentialsPath))
+          fs.unlinkSync(activeCredentialsPath);
         token = null;
       }
 
@@ -401,7 +462,8 @@ program
                 "🔴 AUTH EXPIRED: Your device session was revoked or expired.",
               ),
             );
-            if (fs.existsSync(credentialsPath)) fs.unlinkSync(credentialsPath);
+            if (fs.existsSync(activeCredentialsPath))
+              fs.unlinkSync(activeCredentialsPath);
             forceOS = true;
           } else if (response.ok) {
             const data = await response.json();
@@ -455,7 +517,7 @@ async function handleOfflinePrompt(): Promise<boolean> {
     ),
   );
 
-  if (process.env.CI || process.env.FLOWSTRIDE_API_KEY) {
+  if (process.env.CI || process.env.FLOWSTRIDE_TOKEN) {
     console.log(
       chalk.yellow(
         "⚠️ CI/CD Environment: Automatically falling back to OS Engine.",
