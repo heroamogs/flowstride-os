@@ -6,7 +6,6 @@ import { initAction } from "./commands/init";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import * as tar from "tar";
 import { execSync } from "child_process";
 import { password, confirm } from "@inquirer/prompts";
 import chalk from "chalk";
@@ -19,7 +18,7 @@ const API_BASE =
 program
   .name("flowstride")
   .description("Flowstride: The Enterprise Flow-First Automation CLI")
-  .version("1.0.16");
+  .version("1.0.18");
 
 program
   .command("init")
@@ -194,22 +193,12 @@ program
               const buffer = await tarballResponse.arrayBuffer();
               fs.writeFileSync(tarballPath, Buffer.from(buffer));
 
-              installSpinner.text = "Silently extracting Enterprise Engine...";
+              installSpinner.text = "Wiring up Enterprise dependencies...";
               installSpinner.color = "cyan";
 
-              if (!fs.existsSync(nodeModulesPath)) {
-                fs.mkdirSync(nodeModulesPath, { recursive: true });
-              }
-
-              await tar.x({
-                file: tarballPath,
-                cwd: nodeModulesPath,
-                strip: 1,
-              });
-
-              installSpinner.text = "Wiring up Enterprise dependencies...";
-              execSync("npm install --omit=dev", {
-                cwd: nodeModulesPath,
+              // Let npm natively handle the extraction and binary symlinking
+              execSync(`npm install "${tarballPath}" --no-save`, {
+                cwd: process.cwd(),
                 stdio: "ignore",
               });
 

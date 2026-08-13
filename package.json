@@ -1,6 +1,6 @@
 {
   "name": "flowstride",
-  "version": "1.0.16",
+  "version": "1.0.18",
   "description": "An opensource flowfirst test automation framework",
   "workspaces": [
     "packages/flowstride_report"

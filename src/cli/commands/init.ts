@@ -11,12 +11,13 @@ const execAsync = promisify(exec);
 export async function initAction() {
   const root = process.cwd();
 
-  const folders = ["flows", "reports", "plugins", "fixtures"];
+  // Added 'manual_flows' to strictly isolate manual test designs
+  const folders = ["flows", "manual_flows", "reports", "plugins", "fixtures"];
   const sampleFlowPath = path.join(root, "flows", "example.flow");
   const fixturesReadmePath = path.join(root, "fixtures", "README.md");
   const gitignorePath = path.join(root, ".gitignore");
 
-  console.log("\n[Info] Initializing new workspace...");
+  console.log("\n[Info] Initialising new workspace...");
 
   // 1. Create Directories
   folders.forEach((folder) => {
@@ -24,6 +25,11 @@ export async function initAction() {
     if (!fs.existsSync(dirPath)) {
       fs.mkdirSync(dirPath);
       console.log(`[OK] Created directory: ${folder}/`);
+
+      // Securely ensure the manual_flows directory is strictly tracked by Git even when empty
+      if (folder === "manual_flows") {
+        fs.writeFileSync(path.join(dirPath, ".gitkeep"), "");
+      }
     } else {
       console.log(`[Info] Directory already exists: ${folder}/`);
     }
