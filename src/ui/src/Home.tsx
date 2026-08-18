@@ -6,6 +6,8 @@ import { RunnerView } from "./views/RunnerView";
 import { ReportsView } from "./views/ReportsView";
 import { TestCaseView } from "./views/TestCaseView";
 import { LogsView } from "./views/LogsView";
+import { WorkspaceView } from "./views/WorkspaceView";
+import { RunsView } from "./views/RunsView";
 import { FlowList } from "./components/FlowList";
 import { Header } from "./components/Header";
 
@@ -17,6 +19,10 @@ export default function Home() {
 
   const renderWorkspace = () => {
     switch (activeView) {
+      case "Workspace":
+        return <WorkspaceView />;
+      case "Runs":
+        return <RunsView />;
       case "Flows":
         return (
           <>

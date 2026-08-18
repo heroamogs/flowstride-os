@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { runAction } from "./commands/run";
 import { reportAction } from "./commands/report";
 import { initAction } from "./commands/init";
+import { openAction } from "./commands/open";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -532,6 +533,13 @@ program
   .description("Launch the interactive Debug Dashboard")
   .action(async () => {
     await reportAction();
+  });
+
+program
+  .command("open")
+  .description("Launch the local manual QA UI Workspace")
+  .action(async () => {
+    await openAction();
   });
 
 program.parse(process.argv);
