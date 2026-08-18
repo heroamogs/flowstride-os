@@ -7,6 +7,10 @@ out/
 build/
 *.tsbuildinfo
 
+# # workspace_engine
+src/workspace_engine/target/
+**/target/
+
 # Flowstride Specific Framework Artifacts
 .flowstride/
 reports/
