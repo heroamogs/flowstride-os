@@ -385,7 +385,6 @@ export class FlowWorker extends EventEmitter {
   }
 
   public async runBatch(filesToProcess: string[]): Promise<void> {
-    // this.config.headless = true;
     const isCliHeadless = process.argv.includes("--headless");
 
     if (isCliHeadless) {
@@ -911,14 +910,43 @@ export class FlowWorker extends EventEmitter {
 
     switch (action) {
       case "extract":
-        this.processExtractions([
-          {
-            target: payload.target,
-            jsonPath: payload.jsonPath,
-            variableName: payload.variableName,
-            isGlobal: payload.isGlobal,
-          },
-        ]);
+        if (["resBody", "resHeader", "cookie"].includes(payload.target)) {
+          this.processExtractions([
+            {
+              target: payload.target,
+              jsonPath: payload.jsonPath,
+              variableName: payload.variableName,
+              isGlobal: payload.isGlobal,
+            },
+          ]);
+        } else {
+          let extractedString = "";
+
+          if (payload.target === "text") {
+            extractedString = await this.web.extractText(
+              payload.selector,
+              payload.elementType,
+            );
+          } else if (payload.target === "value") {
+            extractedString = await this.web.extractValue(
+              payload.selector,
+              payload.elementType,
+            );
+          } else if (payload.target === "attribute") {
+            const val = await this.web.getAttribute(
+              payload.selector,
+              payload.attribute,
+              payload.elementType,
+            );
+            extractedString = val || "";
+          }
+
+          if (payload.isGlobal) {
+            FlowWorker.globalVariables[payload.variableName] = extractedString;
+          } else {
+            this.localVariables[payload.variableName] = extractedString;
+          }
+        }
         break;
 
       case "getOtp":

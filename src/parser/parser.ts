@@ -444,17 +444,38 @@ export class Parser {
           );
         }
 
-        if (!["resBody", "resHeader", "cookie"].includes(extTarget)) {
+        if (
+          ![
+            "resBody",
+            "resHeader",
+            "cookie",
+            "text",
+            "value",
+            "attribute",
+          ].includes(extTarget)
+        ) {
           throw new Error(
-            `Line ${extTargetToken.line}: Expected 'resBody', 'resHeader', or 'cookie' after extract`,
+            `Line ${extTargetToken.line}: Expected 'resBody', 'resHeader', 'cookie', 'text', 'value', or 'attribute' after extract`,
           );
         }
 
         payload.target = extTarget;
-        payload.jsonPath = this.consume(
-          TokenType.STRING,
-          "JSONPath or Key expected",
-        ).value;
+
+        if (["resBody", "resHeader", "cookie"].includes(extTarget)) {
+          payload.jsonPath = this.consume(
+            TokenType.STRING,
+            "JSONPath or Key expected",
+          ).value;
+        } else {
+          this.consumeOptionalElement(payload);
+          payload.selector = this.parseSmartSelectorPayload();
+          if (extTarget === "attribute") {
+            payload.attribute = this.consume(
+              TokenType.STRING,
+              "Attribute name expected",
+            ).value;
+          }
+        }
 
         const asToken = this.advance();
         if (asToken.value.toLowerCase() !== "as") {

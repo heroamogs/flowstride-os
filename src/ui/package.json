@@ -10,14 +10,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "dompurify": "^3.1.5",
     "flexlayout-react": "^0.9.1",
     "lucide-react": "^0.400.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-hot-toast": "^2.4.1",
+    "workspace_engine": "file:../workspace_engine/pkg",
     "zustand": "^4.5.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/dompurify": "^3.0.5",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

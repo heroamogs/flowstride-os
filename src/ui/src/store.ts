@@ -53,6 +53,7 @@ interface AppState {
   activeStepId: string | null;
   activeView: string;
   activeTestFile: string;
+  activeHistoricalRunId: string | null;
 
   browserFrames: Record<string, string | null>;
   currentUrls: Record<string, string>;
@@ -80,6 +81,7 @@ interface AppState {
   setPageMetadata: (fileName: string, url: string, title: string) => void;
   setBrowserFrame: (fileName: string, base64: string | null) => void;
   setActiveTestFile: (fileName: string) => void;
+  setActiveHistoricalRunId: (id: string | null) => void;
 
   startRun: (fileName: string, scenarioName: string) => void;
   addStep: (payload: any) => void;
@@ -104,6 +106,7 @@ export const useFlowStore = create<AppState>((set) => ({
   activeStepId: null,
   activeView: "Flows",
   activeTestFile: "",
+  activeHistoricalRunId: null,
   browserFrames: {},
   currentUrls: {},
   pageTitles: {},
@@ -121,6 +124,7 @@ export const useFlowStore = create<AppState>((set) => ({
     set((state) => ({ completedSteps: [...state.completedSteps, id] })),
   setActiveStepId: (id) => set({ activeStepId: id }),
   setActiveTestFile: (fileName) => set({ activeTestFile: fileName }),
+  setActiveHistoricalRunId: (id) => set({ activeHistoricalRunId: id }),
 
   setSelectedLogId: (id) =>
     set((state) => {

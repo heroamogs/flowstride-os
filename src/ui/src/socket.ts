@@ -24,6 +24,15 @@ export const connectToRunner = () => {
       const store = useFlowStore.getState();
 
       switch (data.type) {
+        // STRICT MICRO STEP: The Command Handshake Interceptor
+        case "CLI_CONTEXT":
+          if (data.payload?.command === "run") {
+            store.setActiveView("Flows");
+          } else if (data.payload?.command === "open") {
+            store.setActiveView("Workspace");
+          }
+          break;
+
         case "SUITE_START":
           store.startExecution();
           break;

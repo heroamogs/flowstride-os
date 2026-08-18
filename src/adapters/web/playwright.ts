@@ -33,7 +33,7 @@ export class WebAdapter {
 
           "--use-fake-device-for-media-stream",
 
-          "--disable-blink-features=AutomationControlled", // Cloudflare Mask
+          "--disable-blink-features=AutomationControlled",
         ]
       : [
           "--window-size=1280,800",
@@ -42,7 +42,7 @@ export class WebAdapter {
 
           "--use-fake-device-for-media-stream",
 
-          "--disable-blink-features=AutomationControlled", // Cloudflare Mask
+          "--disable-blink-features=AutomationControlled",
         ];
 
     if (audioInjectionPath) {
@@ -528,6 +528,26 @@ export class WebAdapter {
     await this.page!.waitForTimeout(300);
   }
 
+  public async extractText(
+    selector: string,
+    elementType?: string,
+  ): Promise<string> {
+    const loc = await this.getLocator(selector, elementType, false, false);
+    const targetLoc = await this.checkAmbiguity(loc, selector);
+    await targetLoc.waitFor({ state: "visible" });
+    return (await targetLoc.innerText()) || "";
+  }
+
+  public async extractValue(
+    selector: string,
+    elementType?: string,
+  ): Promise<string> {
+    const loc = await this.getLocator(selector, elementType, false, false);
+    const targetLoc = await this.checkAmbiguity(loc, selector);
+    await targetLoc.waitFor({ state: "visible" });
+    return (await targetLoc.inputValue()) || "";
+  }
+
   public async click(selector: string, elementType?: string): Promise<void> {
     const loc = await this.getLocator(selector, elementType, false, false);
 
@@ -547,7 +567,6 @@ export class WebAdapter {
     await targetLoc.waitFor({ state: "visible" });
     await targetLoc.scrollIntoViewIfNeeded();
 
-    // 1. Accessibility WAI-ARIA Hack (Focus)
     await targetLoc.focus({ timeout: 3000 }).catch(() => {});
     await targetLoc
       .evaluate((node: HTMLElement) => {
@@ -555,24 +574,20 @@ export class WebAdapter {
       })
       .catch(() => {});
 
-    // 2. Get Exact Center Coordinates for Physical Move
     let box = null;
     try {
       box = await targetLoc.boundingBox({ timeout: 3000 });
-    } catch (e) {} // Catch in case it mutated instantly during focus
+    } catch (e) {}
 
     if (box) {
       const centerX = box.x + box.width / 2;
       const centerY = box.y + box.height / 2;
 
-      // Physically drag the mouse to the element to satisfy Hover Intent APIs
       await this.page!.mouse.move(centerX, centerY, { steps: 5 });
     }
 
-    // 3. Playwright Native Hover Backup (Caught to prevent mutation crashes)
     await targetLoc.hover({ force: true, timeout: 3000 }).catch(() => {});
 
-    // 4. The Ultimate Wakeup Call: Synthesize Full Coordinate-Loaded Events
     await targetLoc
       .evaluate((node: Element) => {
         const rect = node.getBoundingClientRect();
@@ -602,12 +617,10 @@ export class WebAdapter {
       })
       .catch(() => {});
 
-    // 5. We perform a programmatic click that won't trigger W3C navigation if handled by React toggles
     await targetLoc
       .click({ delay: 50, force: true, timeout: 3000 })
       .catch(() => {});
 
-    // 6. The Paint Buffer
     await this.page!.waitForTimeout(600);
   }
 
@@ -1409,7 +1422,7 @@ export class WebAdapter {
         .replace(/\s+/g, " ");
 
       if (cleanBody.includes(cleanExpected)) {
-        return; // Assertion passed!
+        return;
       }
 
       await this.page!.waitForTimeout(500);
@@ -1432,6 +1445,33 @@ export class WebAdapter {
     return await loc.first().getAttribute(attr);
   }
 
+  private translateCoordinateSelector(selector: string): string | null {
+    const cleanSelector = selector.replace(/^['"]|['"]$/g, "").trim();
+    if (!cleanSelector) return null;
+
+    const parts = cleanSelector.split(/\s+/);
+    const validTags = ["table", "tr", "th", "td"];
+
+    const isCoordinatePath = parts.every((part) =>
+      validTags.some((tag) => part.toLowerCase().startsWith(tag)),
+    );
+
+    if (!isCoordinatePath) return null;
+
+    let translated = "";
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const match = part.match(/^([a-z]+)(?:\[(\d+)\])?$/i);
+      if (!match) return null;
+
+      const tag = match[1];
+      const index = match[2] ? ` >> nth=${match[2]}` : "";
+      translated += (i > 0 ? " >> " : "") + tag + index;
+    }
+
+    return translated;
+  }
+
   private isRawCssSelector(selector: string): boolean {
     if (
       /\b(near|above|under|below|leftOf|rightOf|inside|in)\s+['"]/i.test(
@@ -1439,6 +1479,8 @@ export class WebAdapter {
       )
     )
       return false;
+
+    if (selector.includes(">> nth=")) return true;
 
     if (/^[#\.\[]/.test(selector)) return true;
 
@@ -1508,6 +1550,12 @@ export class WebAdapter {
       "img",
 
       "svg",
+
+      "tr",
+
+      "th",
+
+      "td",
     ];
 
     if (htmlTags.includes(selector.toLowerCase())) return true;
@@ -1586,15 +1634,18 @@ export class WebAdapter {
 
     fuzzy: boolean = false,
   ): Promise<Locator> {
-    if (this.isRawCssSelector(rawSelector.trim())) {
-      let loc = this.page!.locator(rawSelector);
+    const translatedRaw = this.translateCoordinateSelector(rawSelector);
+    const processingSelector = translatedRaw || rawSelector;
+
+    if (this.isRawCssSelector(processingSelector.trim())) {
+      let loc = this.page!.locator(processingSelector);
 
       if (!isForceAction) loc = loc.filter({ visible: true });
 
       return loc;
     }
 
-    let target = rawSelector;
+    let target = processingSelector;
 
     let relation = "";
 
@@ -1603,24 +1654,31 @@ export class WebAdapter {
     const spatialRegex =
       /\b(near|above|under|below|leftOf|rightOf|inside|in)\s+(['"].*?['"])/i;
 
-    const match = rawSelector.match(spatialRegex);
+    const match = processingSelector.match(spatialRegex);
 
     if (match) {
-      target = rawSelector.substring(0, match.index).trim();
+      target = processingSelector.substring(0, match.index).trim();
 
       relation = match[1].toLowerCase();
 
       anchor = match[2];
     }
 
+    const translatedTarget = this.translateCoordinateSelector(target);
+    if (translatedTarget) {
+      target = translatedTarget;
+    }
+
     let arrayIndex: number | null = null;
 
-    const indexMatch = target.match(/\[(\d+)\]/);
+    if (!translatedTarget) {
+      const indexMatch = target.match(/\[(\d+)\]/);
 
-    if (indexMatch) {
-      arrayIndex = parseInt(indexMatch[1], 10);
+      if (indexMatch) {
+        arrayIndex = parseInt(indexMatch[1], 10);
 
-      target = target.replace(indexMatch[0], "").trim();
+        target = target.replace(indexMatch[0], "").trim();
+      }
     }
 
     const targetClean = target.replace(/^['"]|['"]$/g, "");
@@ -1643,12 +1701,14 @@ export class WebAdapter {
 
     if (relation && anchor) {
       const anchorClean = anchor.replace(/^['"]|['"]$/g, "");
+      const translatedAnchor = this.translateCoordinateSelector(anchorClean);
+      const finalAnchorClean = translatedAnchor || anchorClean;
 
-      const anchorIsRaw = this.isRawCssSelector(anchorClean);
+      const anchorIsRaw = this.isRawCssSelector(finalAnchorClean);
 
       const anchorSelector = anchorIsRaw
-        ? anchorClean
-        : this.buildHeuristicSelector(anchorClean, undefined, true, fuzzy);
+        ? finalAnchorClean
+        : this.buildHeuristicSelector(finalAnchorClean, undefined, true, fuzzy);
 
       const anchorLoc = this.page!.locator(anchorSelector).first();
 
@@ -1689,10 +1749,10 @@ export class WebAdapter {
         case "inside":
 
         case "in":
-          alternativeSelector = `${anchorSelector}:has-text("${targetClean}")`;
-
+          if (!anchorSelector.includes("nth=")) {
+            alternativeSelector = `${anchorSelector}:has-text("${targetClean}")`;
+          }
           finalSelector = `${anchorSelector} >> ${finalSelector}`;
-
           break;
       }
     }

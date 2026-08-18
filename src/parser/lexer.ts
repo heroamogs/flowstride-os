@@ -400,6 +400,10 @@ export class Lexer {
             "img",
             "burger",
             "hamburger",
+            "table",
+            "tr",
+            "th",
+            "td",
           ].includes(lowerIdent)
         ) {
           tokens.push({
