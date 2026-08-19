@@ -44,10 +44,21 @@ export class FlowOrchestrator {
     const stats = fs.statSync(targetPath);
 
     if (stats.isDirectory()) {
-      filesToProcess = fs
+      const allFlowFiles = fs
         .readdirSync(targetPath)
-        .filter((f) => f.endsWith(".flow"))
+        .filter((f) => f.endsWith(".flow"));
+
+      const priorityQueue = allFlowFiles
+        .filter((f) => f.endsWith(".first.flow"))
+        .sort()
         .map((f) => path.join(targetPath, f));
+
+      const standardQueue = allFlowFiles
+        .filter((f) => !f.endsWith(".first.flow"))
+        .sort()
+        .map((f) => path.join(targetPath, f));
+
+      filesToProcess = [...priorityQueue, ...standardQueue];
     } else {
       filesToProcess = [targetPath];
     }
@@ -357,13 +368,12 @@ export class FlowOrchestrator {
   private async handleExportPdfRequest(testScenariosFromUI: any[]) {
     try {
       const spinner = ora(
-        chalk.blue("Compiling high-fidelity PDF report..."),
+        chalk.blue("Compiling high fidelity PDF report..."),
       ).start();
 
       const pdfPath =
         await this.pdfGenerator.generateTestcasePdf(testScenariosFromUI);
 
-      // Convert the saved PDF to base64 to trigger the native browser download UI
       const pdfBuffer = fs.readFileSync(pdfPath);
       const base64Data = pdfBuffer.toString("base64");
 
