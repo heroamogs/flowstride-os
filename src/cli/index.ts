@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { loadNativeConfig } from '../ci/config';
+import { initCI } from '../ci/init';
 import { Command } from "commander";
 import { runAction } from "./commands/run";
 import { reportAction } from "./commands/report";
@@ -19,7 +21,7 @@ const API_BASE =
 program
   .name("flowstride")
   .description("Flowstride: The Enterprise Flow-First Automation CLI")
-  .version("1.0.19");
+  .version("1.0.20-rc.1");
 
 program
   .command("init")
@@ -377,6 +379,10 @@ program
     "--workers <number>",
     "Number of parallel workers to spawn (Pro feature)",
   )
+  .option('--ci', 'Run without a dashboard and write CI reports')
+  .option('--device <profile>', 'desktop, phone, or landscape')
+  .option('--config <file>', 'Path to the Flowstride configuration')
+  .option('--env <name>', 'Environment profile')
   .action(
     async (targetPath: string | undefined, options: Record<string, any>) => {
       if (typeof targetPath === "object") {
@@ -384,6 +390,7 @@ program
         targetPath = undefined;
       }
 
+      if (options.ci) process.env.FLOWSTRIDE_NATIVE_CI = '1';
       let token = process.env.FLOWSTRIDE_TOKEN || null;
       let forceOS = false;
 
@@ -458,6 +465,19 @@ program
           } else if (response.ok) {
             const data = await response.json();
             const tier = data.tier.toUpperCase();
+            if (loadNativeConfig(process.cwd(), options).ci && fs.existsSync(nodeModulesPath)) {
+              const workspaceResponse = await fetch(`${API_BASE}/api/workspace/status`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!workspaceResponse.ok) forceOS = await handleOfflinePrompt();
+              else {
+                const workspaceData = await workspaceResponse.json();
+                options.manifest = workspaceData.manifest;
+                options.workspaceId = workspaceData.workspace?._id;
+                options.isCloudSyncActive = true;
+              }
+            }
+
 
             if (tier === "PERSONAL") {
               console.log(
@@ -484,7 +504,7 @@ program
         options.headless = false;
       }
 
-      const resolvedTargetPath = targetPath ? targetPath : "./flows";
+      const resolvedTargetPath = targetPath || loadNativeConfig(process.cwd(), options).testDir!;
       const strictUiFlowsDir = path.resolve(process.cwd(), resolvedTargetPath);
 
       if (!fs.existsSync(strictUiFlowsDir)) {
@@ -496,6 +516,11 @@ program
       }
 
       options.forceOS = forceOS;
+      if (!forceOS && token) {
+        options.machineToken = token;
+        const file = fs.existsSync(localCredentialsPath) ? localCredentialsPath : globalCredentialsPath;
+        if (!options.workspaceId && fs.existsSync(file)) options.workspaceId = JSON.parse(fs.readFileSync(file, 'utf8')).workspaceId;
+      }
       await runAction(strictUiFlowsDir, options);
     },
   );
@@ -507,7 +532,7 @@ async function handleOfflinePrompt(): Promise<boolean> {
     ),
   );
 
-  if (process.env.CI || process.env.FLOWSTRIDE_TOKEN) {
+  if (process.env.CI || process.env.FLOWSTRIDE_NATIVE_CI || process.env.FLOWSTRIDE_TOKEN) {
     console.log(
       chalk.yellow(
         "⚠️ CI/CD Environment: Automatically falling back to OS Engine.",
@@ -541,5 +566,19 @@ program
   .action(async () => {
     await openAction();
   });
+
+program.command('install')
+  .description('Install Chromium matching this Flowstride engine')
+  .option('--with-deps', 'Install operating-system browser dependencies')
+  .action((options: { withDeps?: boolean }) => {
+    const { execFileSync } = require('node:child_process');
+    execFileSync(process.execPath, [path.join(path.dirname(require.resolve('playwright/package.json')), 'cli.js'), 'install', ...(options.withDeps ? ['--with-deps'] : []), 'chromium'], { stdio: 'inherit', env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_GC: '1' } });
+  });
+
+program.command('ci')
+  .description('Set up native Flowstride CI')
+  .command('init <provider>')
+  .description('Generate a GitHub Actions workflow without overwriting existing files')
+  .action((provider: string) => initCI(provider));
 
 program.parse(process.argv);

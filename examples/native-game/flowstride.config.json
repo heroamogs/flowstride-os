@@ -1,0 +1,12 @@
+{
+  "testDir": "flows",
+  "device": "phone",
+  "timeout": 5000,
+  "artifactsDir": "flowstride-artifacts",
+  "recordVideo": true,
+  "webServer": {
+    "command": "node server.mjs",
+    "url": "http://127.0.0.1:5189",
+    "timeout": 10000
+  }
+}

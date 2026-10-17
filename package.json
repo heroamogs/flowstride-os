@@ -1,6 +1,6 @@
 {
   "name": "flowstride",
-  "version": "1.0.19",
+  "version": "1.0.20-rc.1",
   "description": "An opensource flowfirst test automation framework",
   "workspaces": [
     "packages/flowstride_report"
@@ -9,7 +9,9 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
-    "src/ui/dist"
+    "src/ui/dist",
+    "NATIVE_CI.md",
+    "examples/native-game"
   ],
   "bin": {
     "flowstride": "dist/cli/index.js"
@@ -18,7 +20,8 @@
     "build": "tsc",
     "flowstride": "node ./dist/cli/index.js",
     "test": "echo 'Test script to be configured'",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test:native": "node --test --test-concurrency=1 tests/native/*.test.cjs"
   },
   "keywords": [
     "automation",
@@ -39,7 +42,7 @@
     "dotenv": "^17.4.2",
     "open": "^11.0.0",
     "ora": "^5.4.1",
-    "playwright": "^1.59.1",
+    "playwright": "1.59.1",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "tar": "^7.5.16",
