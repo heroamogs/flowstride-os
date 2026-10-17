@@ -1,6 +1,6 @@
 {
   "name": "flowstride",
-  "version": "1.0.20-rc.1",
+  "version": "1.0.20-rc.2",
   "description": "An opensource flowfirst test automation framework",
   "workspaces": [
     "packages/flowstride_report"
@@ -11,7 +11,8 @@
     "dist",
     "src/ui/dist",
     "NATIVE_CI.md",
-    "examples/native-game"
+    "examples/native-game",
+    "RELEASE_NOTES.md"
   ],
   "bin": {
     "flowstride": "dist/cli/index.js"
@@ -32,7 +33,7 @@
   "author": "Samuel Okolo",
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.12.0"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.10.1",
@@ -57,5 +58,10 @@
   },
   "optionalDependencies": {
     "@rolldown/binding-darwin-arm64": "^0.15.1"
+  },
+  "publishConfig": {
+    "tag": "next",
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   }
 }

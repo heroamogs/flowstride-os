@@ -34,6 +34,8 @@ if(name!=='flowstride'){
  const server=path.join(root,'server.mjs');fs.writeFileSync(server,fs.readFileSync(server,'utf8').replace("from 'flowstride/","from '@flowstride/pro/"));
 }
 const cli=path.join(engine,'dist/cli/index.js');
+const cliVersion=invoke('cli-version',process.execPath,[cli,'--version']);
+assert.equal(cliVersion.status,0);assert.equal(cliVersion.stdout.trim(),packageJSON.version);
 // Use an isolated consumer port, rather than the sample's fixed port.
 const {createServer}=await import('node:net');const probe=createServer();
 await new Promise(resolve=>probe.listen(0,'127.0.0.1',resolve));const port=probe.address().port;await new Promise(resolve=>probe.close(resolve));

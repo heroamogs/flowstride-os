@@ -1,0 +1,21 @@
+{
+  "version": "1.0.20-rc.2",
+  "mergedBaseCommit": "59458e173fd252739ace63a6027dfa666f1915b2",
+  "dashboardSourceArchive": {
+    "file": "flowstride-1.0.20-rc.1.tgz",
+    "sha256": "9c67be1c9e5acb23919e457988cc91702ee3febc22f828f378f4e4a41f0030d7"
+  },
+  "dashboardSourceCommit": "59458e173fd252739ace63a6027dfa666f1915b2",
+  "dashboardFiles": {
+    "src/ui/dist/assets/index-DXTn_ThB.css": "75c4e5588a9082fc49837f354b6d215aca5370c1402b7a11c412f8d5dad6b0fd",
+    "src/ui/dist/index.html": "c56c28dba7d3d36d1ac59f499a1dc6fe1af4f8ff5ef20783bdcebd1c57ea9131",
+    "src/ui/dist/assets/index-DIC22ZK_.js": "7c176a241a2a193f38cc44262c24cc3cb9e752eb0972a0baa58490d150706a12",
+    "src/ui/dist/favicon.png": "5ea5435b19a8cc9ac84cdeaeabdc1faf8e41ba3958665fd577cfc7dc6c981861",
+    "src/ui/dist/assets/flow_logo-CjiL4Lvy.png": "5ea5435b19a8cc9ac84cdeaeabdc1faf8e41ba3958665fd577cfc7dc6c981861",
+    "src/ui/dist/favicon.svg": "61bc9a161de58248288e6905425d7180f0624c2865007b97d763fdac12043a66",
+    "src/ui/dist/icons.svg": "b45fa506195cfcdef406ba9f0c77b36ddc1a7c224040926ec70abc2fdea7b93a",
+    "src/ui/dist/assets/workspace_engine_bg-BVlpAZ1H.wasm": "b04f6260a510e8c3b702110e07bfb361a9deca616374e64623f23445b4d53a76"
+  },
+  "engineBuiltFromSource": true,
+  "npmPublicationPerformed": false
+}

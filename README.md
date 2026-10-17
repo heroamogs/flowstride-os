@@ -6,6 +6,34 @@ Flowstride OS combines the human-readable structure of Behavior-Driven Developme
 
 [Documentation](https://docs.flowstride.io/)
 
+## Native CI and game testing preview — 1.0.20-rc.2
+
+This is an opt-in preview intended for the npm `next` tag. The default stable
+release remains available through `latest`. After the preview is published:
+
+```sh
+npm install --save-dev flowstride@next
+npx --no-install flowstride install
+npx --no-install flowstride run --ci
+```
+
+Node.js 22.12.0+ is required; acceptance covers the minimum version and current
+Node.js 22/24 on Linux, plus Node.js 24 on macOS. The preview adds native CI
+exit codes, JSON/JUnit reports, videos/screenshots, device profiles, explicit
+GitHub workflow generation, and supported canvas/Three.js testing APIs.
+See [native CI setup](NATIVE_CI.md) and [release notes](RELEASE_NOTES.md).
+
+For this preview, use OSS alone or manually install the matching private Pro
+`1.0.15-rc.1` candidate after project dependencies. Normal Cloud login still
+serves Pro `1.0.14`; signing in afterward can replace the preview's Pro package,
+and that older CLI does not support the new native commands. Cloud reporting
+and video-storage defects remain open. Native CI keeps Cloud reporting off by
+default. Managed Cloud execution remains retired.
+
+This release qualifies Chromium desktop and emulated phone/landscape profiles
+and browser-game fixtures. It does not establish physical-phone, Safari,
+Firefox, other game-engine, or complete application-game coverage.
+
 ---
 
 ## Why Flowstride?
@@ -21,7 +49,7 @@ Traditional E2E frameworks force you to choose between highly technical code (wh
 
 ## Installation & Quick Start
 
-Flowstride requires Node.js 18 or higher.
+Flowstride requires Node.js 22.12.0 or higher. Use a current patched Node.js 22 or 24 release.
 
 **1. Install globally (or as a dev dependency in your project):**
 
@@ -71,41 +99,20 @@ npx flowstride login
 
 ---
 
-## Privacy & Data Security
+## Execution data and Cloud integration
 
-Flowstride is designed with a **zero-trust, local-first architecture**. Whether you are testing internal microservices, staging environments, or production APIs, your sensitive data, PHI, and credentials remain strictly on your infrastructure.
+Tests run on your machine or CI runner. Native CI writes reports, screenshots,
+videos and attachments to the configured local artifact directory. Interactive
+API diagnostics are available in the local dashboard. These outputs can contain
+application data or credentials; automatic redaction is not guaranteed.
 
-### Open Source Core: 100% Local Isolation
+Cloud login/licensing, FlowMail OTP retrieval and explicitly enabled Cloud
+reporting contact their configured services. Native CI leaves Cloud reporting
+off unless `cloudSync: true` is explicitly configured. Existing Cloud reporting
+and storage limitations remain documented in the preview release notes.
 
-The Open Source version of Flowstride operates entirely as an ephemeral, local execution engine.
-
-- **Air-Gapped Execution:** Flowstride does not "phone home." The OS runner executes strictly on your local machine or within your private CI/CD pipeline. There is no external Flowstride database storing your test payloads or network logs.
-
-- **Ephemeral Memory:** Flowstride is inherently stateless. API request headers, response bodies, and DOM snapshots exist only in Node.js RAM during execution. The millisecond the execution process terminates, all memory is wiped.
-
-- **The DevTools Analogy:** Our network interception works natively within Playwright's browser context routing. It is fundamentally identical to opening the Chrome DevTools "Network" tab locally. We do not act as an external Man-In-The-Middle (MITM) proxy.
-
-- **Opt-In Local State:** Artifacts saved to disk—such as execution videos (`.flowstride/mock-cloud/`) or explicitly persisted browser states (`.flowstride/sessions/`)—are written strictly to your local file system to mirror the functionality of tools like Postman. _(Note: We strongly recommend adding `.flowstride/` to your `.gitignore` to prevent accidental credential commits)._
-
-### Flowstride Enterprise: Secure Cloud Telemetry
-
-For teams using Flowstride Enterprise to aggregate multi-flow metrics, we maintain a strict metadata-only boundary.
-
-- **Metadata, Not Payloads:** When cloud sync is active, Flowstride routes only execution metadata to your team's dashboard (e.g., Workspace ID, execution duration, total steps, and pass/fail tallies). **Zero bytes** of request headers, bearer tokens, or JSON bodies are ever transmitted to Flowstride Cloud.
-
-- **Deep Debugging Stays Local:** The rich, interactive visual dashboard, including the JSON explorer and API Replay tools, runs on a dynamic, locally bound port on your machine. You get the UI of a modern cloud app with the security of a local binary.
-
-### CI/CD Leak Protection & Terminal Hygiene
-
-Standard testing frameworks do dump failing API requests, and response bodies directly into the terminal so developers can debug them. In a CI/CD environment, this is a massive security liability, as those secrets are permanently burned into plaintext Jenkins, GitHub Actions, or GitLab CI logs.
-
-Flowstride completely neutralizes this threat by architecturally separating execution output from diagnostic telemetry:
-
-1. **Clean Standard Output (`stdout`):** Flowstride's terminal output only displays high-level, human-readable BDD execution steps (e.g., `✔ Given "User lands on home page"` or `✖ Action Failed`). No JSON request bodies, `cURL` strings, or bearer tokens are ever printed to the terminal console.
-
-2. **WebSocket Isolation:** All sensitive raw network data (payloads, headers, and responses) is emitted _exclusively_ over a secure, ephemeral WebSocket connection directly to the developer's local UI dashboard.
-
-3. **Total Evaporation:** Because CI/CD runners only capture `stdout` text and do not connect to local WebSockets, your highly sensitive diagnostic data simply evaporates the moment the pipeline execution ends. Your pipeline logs remain 100% free of plaintext secrets.
+Use test credentials, keep runtime state and artifacts out of source control,
+and choose CI artifact access and retention appropriate to the test data.
 
 ---
 

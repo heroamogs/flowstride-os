@@ -19,7 +19,7 @@ currently hosted Cloud download still serves the existing release; this local
 candidate does not change that endpoint or its archive.
 
 ```sh
-npm install --save-dev /absolute/path/flowstride-1.0.20-rc.1.tgz
+npm install --save-dev /absolute/path/flowstride-1.0.20-rc.2.tgz
 # Optional: install the local matching Pro candidate after project dependencies.
 npm install --no-save /absolute/path/flowstride-pro-1.0.15-rc.1.tgz
 npx --no-install flowstride install
@@ -142,3 +142,14 @@ Qualification covers Chromium and emulated desktop/phone/landscape profiles.
 Physical Android/iOS devices, Safari/Firefox and other game engines are outside
 this candidate's verified support scope. Real Cloud licensing, reporting and
 video storage require a separate live acceptance run.
+
+## OSS npm preview release
+
+OSS `1.0.20-rc.2` requires Node.js 22.12.0+. Publish the verified archive under
+`next`; install with `npm install --save-dev flowstride@next` after publication.
+Use the release archive and checksum rather than rebuilding from a dirty checkout.
+The matching local Pro candidate remains `1.0.15-rc.1`; hosted Pro remains
+`1.0.14`. Complete authentication before reinstalling the local Pro candidate.
+The unchanged dashboard bundle is reused from the previously qualified rc.1
+archive; the engine is rebuilt from this source. The release input manifest
+records both that archive's checksum and the merged base commit.
