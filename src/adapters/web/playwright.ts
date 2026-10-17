@@ -1,3 +1,4 @@
+import { devices } from 'playwright';
 import * as fs from "fs";
 import * as path from "path";
 import { chromium } from "playwright-extra";
@@ -8,6 +9,8 @@ import { FlowstrideConfig } from "../../types";
 chromium.use(stealthPlugin());
 
 export class WebAdapter {
+  public pageErrors: string[] = [];
+
   private browser: Browser | null = null;
 
   private context: BrowserContext | null = null;
@@ -53,7 +56,8 @@ export class WebAdapter {
 
     this.browser = await chromium.launch({
       headless: this.config.headless,
-
+      // Native CI finalizes videos before closing the browser on cancellation.
+      ...(this.config.ci ? { handleSIGINT: false, handleSIGTERM: false } : {}),
       args: launchArgs,
     });
 
@@ -61,20 +65,16 @@ export class WebAdapter {
 
     if (!fs.existsSync(videoDir)) fs.mkdirSync(videoDir, { recursive: true });
 
-    const customUserAgent =
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
+    const profile = this.config.device === 'phone' || this.config.device === 'landscape'
+      ? { ...devices['Pixel 7'], viewport: this.config.device === 'landscape' ? { width: 844, height: 390 } : { width: 390, height: 844 } }
+      : { viewport: { width: 1280, height: 800 }, userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' };
+    const viewport = this.config.viewport || profile.viewport;
     this.context = await this.browser.newContext({
-      viewport: null,
-
-      userAgent: customUserAgent,
-
-      recordVideo: {
-        dir: videoDir,
-
-        size: { width: 1280, height: 800 },
-      },
+      ...profile, viewport,
+      ...(this.config.recordVideo === false ? {} : { recordVideo: { dir: videoDir, size: viewport } }),
     });
+    this.pageErrors = [];
+    this.context.on('page', page => page.on('pageerror', error => this.pageErrors.push(error.message)));
 
     this.context.on("dialog", async (dialog) => {
       if (this.dialogHandler) {
@@ -661,9 +661,9 @@ export class WebAdapter {
       let actualValue = "";
 
       try {
-        actualValue = await targetLoc.inputValue({ timeout: 500 });
+        actualValue = await targetLoc.inputValue({ timeout: this.config.timeout });
       } catch {
-        actualValue = (await targetLoc.textContent({ timeout: 500 })) || "";
+        actualValue = (await targetLoc.textContent({ timeout: this.config.timeout })) || "";
       }
 
       const cleanActual = actualValue.replace(/[^a-zA-Z0-9]/g, "");
@@ -876,13 +876,10 @@ export class WebAdapter {
     }
 
     try {
-      const fileChooserPromise = this.page!.waitForEvent("filechooser", {
-        timeout: 5000,
-      });
-
-      await targetLoc.click();
-
-      const fileChooser = await fileChooserPromise;
+      const [fileChooser] = await Promise.all([
+        this.page!.waitForEvent('filechooser', { timeout: this.config.timeout }),
+        targetLoc.click({ timeout: this.config.timeout }),
+      ]);
 
       await fileChooser.setFiles(absolutePath);
     } catch (e) {

@@ -1,0 +1,55 @@
+name: Native CI acceptance
+on:
+  push:
+    branches: ['codex/native-ci-acceptance']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    env:
+      CI: 'true'
+      PLAYWRIGHT_SKIP_BROWSER_GC: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Install locked engine dependencies
+        run: npm ci --ignore-scripts --workspaces=false
+      - name: Build engine
+        run: npm run build
+      - name: Install matching browser and Linux dependencies
+        run: node dist/cli/index.js install --with-deps
+      - name: Install real Three.js fixture dependency
+        run: npm install --prefix "$RUNNER_TEMP/flowstride-three" --ignore-scripts --no-audit --no-fund three@0.186.1
+      - name: Test native execution, game actions, uploads and cancellation
+        env:
+          FLOWSTRIDE_THREE_BUILD: ${{ runner.temp }}/flowstride-three/node_modules/three/build
+        run: npm run test:native
+      - name: Verify the immutable candidate matches this source
+        run: node scripts/verify-candidate.mjs .github/fixtures/candidate.json
+      - name: Verify clean candidate installation and real execution
+        run: node scripts/qualify-archive.mjs .github/fixtures "$RUNNER_TEMP/flowstride-archive-acceptance"
+      - name: Retain package and acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-${{ matrix.node }}-${{ github.sha }}
+          path: |
+            .github/fixtures/
+            ${{ runner.temp }}/flowstride-archive-acceptance/
+          retention-days: 14

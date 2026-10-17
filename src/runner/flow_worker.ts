@@ -398,6 +398,7 @@ export class FlowWorker extends EventEmitter {
     this.isDebugHalted = false;
 
     const sigintHandler = async () => {
+      if (this.config.ci) { this.abort(); return; }
       if (!this.isSilent) {
         console.log(
           chalk.yellow(
@@ -410,7 +411,7 @@ export class FlowWorker extends EventEmitter {
       try {
         await this.web.shutdown();
       } catch (e) {}
-      process.exit(0);
+      if (!this.config.ci) process.exit(0);
     };
 
     process.once("SIGINT", sigintHandler);
@@ -441,6 +442,7 @@ export class FlowWorker extends EventEmitter {
         try {
           const fileName = path.basename(filePath);
           this.currentFileName = fileName;
+          this.config.testFile = fileName;
 
           this.localVariables = {};
           this.localBrowserSessions = {};
@@ -532,7 +534,7 @@ export class FlowWorker extends EventEmitter {
                 .getPage()
                 .waitForLoadState("networkidle", { timeout: 4000 })
                 .catch(() => {});
-              await new Promise((resolve) => setTimeout(resolve, 2000));
+              if (!this.config.ci) await new Promise((resolve) => setTimeout(resolve, 2000));
             }
           }
 
@@ -542,7 +544,7 @@ export class FlowWorker extends EventEmitter {
             console.log(
               chalk.gray("\n[Execution]: Finalizing browser actions..."),
             );
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+          if (!this.config.ci) await new Promise((resolve) => setTimeout(resolve, 2000));
 
           try {
             const baseName = this.currentFileName.replace(".flow", "");
@@ -556,6 +558,7 @@ export class FlowWorker extends EventEmitter {
 
             const targetVideoPath = path.join(mockCloudDir, `${baseName}.webm`);
 
+            for (const message of this.web.pageErrors || []) this.broadcast('BROWSER_ERROR', { message, fileName: this.currentFileName });
             await this.web.shutdown(targetVideoPath);
             if (!this.isSilent)
               console.log(
@@ -591,6 +594,7 @@ export class FlowWorker extends EventEmitter {
 
             const targetVideoPath = path.join(mockCloudDir, `${baseName}.webm`);
 
+            for (const message of this.web.pageErrors || []) this.broadcast('BROWSER_ERROR', { message, fileName: this.currentFileName });
             await this.web.shutdown(targetVideoPath);
             if (!this.isSilent)
               console.log(
@@ -608,7 +612,7 @@ export class FlowWorker extends EventEmitter {
         }
       }
 
-      if (!this.isSilent && !this.isAborted) {
+      if (!this.config.ci && !this.isSilent && !this.isAborted) {
         if (this.isDebugHalted) {
           console.log(
             chalk.cyan("\n[Execution]: Test suite halted by debug flag."),
@@ -620,6 +624,13 @@ export class FlowWorker extends EventEmitter {
         }
       }
     } finally {
+      if (this.config.ci && this.isAborted) {
+        try {
+          const directory = path.join(process.cwd(), '.flowstride', 'artifacts');
+          fs.mkdirSync(directory, { recursive: true });
+          await this.web.shutdown(path.join(directory, this.currentFileName.replace(/\.flow$/, '') + '.webm'));
+        } catch (error: any) { this.broadcast('WORKER_ERROR', { message: error.message }); }
+      }
       process.removeListener("SIGINT", sigintHandler);
     }
   }
@@ -1570,6 +1581,7 @@ export class FlowWorker extends EventEmitter {
   }
 
   private async startStreaming() {
+    if (this.config.ci) return;
     const page = this.web.getPage();
     if (this.currentCdpSession) {
       await this.currentCdpSession.detach().catch(() => {});

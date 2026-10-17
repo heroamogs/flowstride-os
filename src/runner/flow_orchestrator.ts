@@ -9,6 +9,8 @@ import { FlowstrideConfig } from "../types";
 import { PdfGenerator } from "../reporting/pdf_generator";
 
 export class FlowOrchestrator {
+  public static readonly nativeCIProtocol = 1;
+  public readonly nativeEventProtocol = 1;
   private wss: WebSocketServer | null = null;
   private httpServer: http.Server | null = null;
 
@@ -29,6 +31,7 @@ export class FlowOrchestrator {
   }
 
   private forwardToDashboard(type: string, payload: any) {
+    this.config?.onRunEvent?.({ type, payload });
     if (this.wss) {
       this.wss.clients.forEach((client) => {
         if (client.readyState === 1)
@@ -98,11 +101,14 @@ export class FlowOrchestrator {
     await this.worker.runBatch(filesToProcess);
 
     this.worker.off("worker_event", listener);
-    this.forwardToDashboard("RUN_COMPLETE", { status: "success" });
+    const passed = ![...this.stepStatusRegistry.values()].some(status => ['failed','running','not_tested'].includes(status));
+    this.forwardToDashboard("RUN_COMPLETE", { status: passed ? 'success' : 'failed' });
+    return passed;
   }
 
-  public async start(targetPath: string): Promise<void> {
+  public async start(targetPath: string): Promise<boolean> {
     try {
+      if (this.config?.ci) return await this.executeTestRun(targetPath);
       this.httpServer = http.createServer((req, res) => {
         res.setHeader("Access-Control-Allow-Origin", "*");
 
@@ -303,7 +309,7 @@ export class FlowOrchestrator {
         });
       });
 
-      return new Promise((resolve, reject) => {
+      return new Promise<boolean>((resolve, reject) => {
         this.httpServer!.listen(0, async () => {
           try {
             const address = this.httpServer?.address();
@@ -352,9 +358,9 @@ export class FlowOrchestrator {
               );
             }
 
-            await this.executeTestRun(targetPath);
+            const result = await this.executeTestRun(targetPath);
 
-            resolve(undefined);
+            resolve(result);
           } catch (err) {
             reject(err);
           }
@@ -363,6 +369,16 @@ export class FlowOrchestrator {
     } catch (e: any) {
       throw e;
     }
+  }
+
+  public abort() {
+    this.worker.abort();
+  }
+
+  public async close() {
+    if (this.disconnectTimer) clearTimeout(this.disconnectTimer);
+    this.wss?.clients.forEach(client => client.terminate());
+    this.wss?.close(); this.httpServer?.close();
   }
 
   private async handleExportPdfRequest(testScenariosFromUI: any[]) {

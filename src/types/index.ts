@@ -1,4 +1,19 @@
 export interface FlowstrideConfig {
+  ci?: boolean;
+  device?: 'desktop' | 'phone' | 'landscape';
+  viewport?: { width: number; height: number };
+  testDir?: string;
+  artifactsDir?: string;
+  recordVideo?: boolean;
+  browserErrors?: 'fail' | 'record';
+  webServer?: { command: string; url: string; cwd?: string; timeout?: number };
+  testFile?: string;
+  onRunEvent?: (event: any) => void;
+  bail?: boolean;
+  isCloudSyncActive?: boolean;
+  machineToken?: string | null;
+  workspaceId?: string | null;
+  manifest?: { plan?: string; maxWorkers?: number | 'unlimited'; [key: string]: any } | null;
   baseUrl?: string;
   timeout: number;
   headless: boolean;
@@ -45,6 +60,10 @@ export interface SessionDefinition {
 }
 
 export interface FlowstrideSDK {
+  game: import('../game/sdk').GameSDK;
+  browser: { page: () => import('playwright').Page };
+  run: { device: string; artifactsDir: string; attach: (name: string, data: string | Buffer) => string };
+
   api: {
     get: (url: string, headers?: Record<string, string>) => Promise<any>;
     post: (url: string, body: any, headers?: Record<string, string>) => Promise<any>;
