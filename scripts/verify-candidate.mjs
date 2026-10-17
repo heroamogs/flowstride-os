@@ -14,6 +14,8 @@ const candidate=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'
 const source=JSON.parse(fs.readFileSync('package.json','utf8'));
 assert.equal(candidate.name,source.name);assert.equal(candidate.version,source.version);
 assert.deepEqual(candidate.dependencies,source.dependencies);
+assert.deepEqual(candidate.engines,source.engines);
+assert.deepEqual(candidate.publishConfig,source.publishConfig);
 let count=0;
 function walk(folder){for(const item of fs.readdirSync(folder,{withFileTypes:true})){
  const file=path.join(folder,item.name);

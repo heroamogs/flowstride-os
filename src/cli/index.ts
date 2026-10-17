@@ -21,7 +21,7 @@ const API_BASE =
 program
   .name("flowstride")
   .description("Flowstride: The Enterprise Flow-First Automation CLI")
-  .version("1.0.20-rc.1");
+  .version("1.0.20-rc.2");
 
 program
   .command("init")

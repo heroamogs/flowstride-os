@@ -1,7 +1,7 @@
 name: Native CI acceptance
 on:
   push:
-    branches: ['codex/native-ci-acceptance']
+    branches: ['codex/native-ci-acceptance', 'codex/npm-preview-rc2']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [22, 24]
+        node: ['22.12.0', 22, 24]
     env:
       CI: 'true'
       PLAYWRIGHT_SKIP_BROWSER_GC: '1'
