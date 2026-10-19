@@ -46,6 +46,8 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Build engine and dashboard from source
         run: npm run build:candidate
+      - name: Install matching Chromium and Linux dependencies
+        run: node dist/cli/index.js install --with-deps
       - name: Unit tests
         run: npm run test:unit
       - name: Security regression tests
@@ -55,8 +57,6 @@ jobs:
       - name: Audit dashboard runtime dependencies
         working-directory: src/ui
         run: npm audit --omit=dev --audit-level=high
-      - name: Install matching Chromium and Linux dependencies
-        run: node dist/cli/index.js install --with-deps
       - name: Install real Three.js fixture
         run: npm install --prefix "$RUNNER_TEMP/flowstride-three" --ignore-scripts --no-audit --no-fund three@0.186.1
       - name: Native CI, game, upload, failure and dashboard acceptance
