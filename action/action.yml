@@ -1,0 +1,61 @@
+name: Flowstride
+description: Native Flowstride browser and game testing
+inputs:
+  working-directory:
+    description: Project directory containing the lockfile and Flowstride configuration
+    default: .
+  node-version:
+    description: Supported Node.js version
+    default: '24'
+  install-command:
+    description: Project dependency installation command
+    default: npm ci
+  pro-token:
+    description: Optional Flowstride developer token for private Pro installation
+    required: false
+  device:
+    description: desktop, phone, or landscape
+    default: desktop
+  artifacts-path:
+    description: Relative path matching artifactsDir in Flowstride configuration
+    default: flowstride-artifacts/
+  artifact-name:
+    description: Unique artifact name for this job
+    default: flowstride-results
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      with:
+        node-version: ${{ inputs.node-version }}
+    - name: Install project dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INSTALL_COMMAND: ${{ inputs.install-command }}
+      run: bash -e -o pipefail -c "$INSTALL_COMMAND"
+    - name: Install Pro after project dependencies
+      if: inputs.pro-token != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        FLOWSTRIDE_TOKEN: ${{ inputs.pro-token }}
+      run: npx --no-install flowstride login
+    - name: Install matching Chromium
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: npx --no-install flowstride install --with-deps
+    - name: Run Flowstride
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        FLOWSTRIDE_TOKEN: ${{ inputs.pro-token }}
+        FLOWSTRIDE_DEVICE: ${{ inputs.device }}
+      run: npx --no-install flowstride run --ci --device "$FLOWSTRIDE_DEVICE"
+    - name: Upload evidence
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.working-directory }}/${{ inputs.artifacts-path }}
+        retention-days: 14

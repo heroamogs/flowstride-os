@@ -1,3 +1,4 @@
+import { sanitizeImportedCanvas } from '../utils/manualContent';
 import { useRef, useEffect, useState } from "react";
 import init, {
   WorkspaceEngine,
@@ -213,6 +214,7 @@ export default function EngineFrame() {
         }
       },
       importDesignState: (parsedData: any) => {
+        parsedData = sanitizeImportedCanvas(parsedData);
         if (!document.getElementById(CANVAS_ID)) {
           pendingBlueprintQueueRef.current = parsedData;
           return;

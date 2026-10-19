@@ -1,0 +1,13 @@
+Feature: Native canvas game testing
+let game = "flowstride:game"
+Scenario: A tap changes game state and rendering
+Given "The game is ready"
+  flow.open "http://127.0.0.1:5189"
+  game.fixture {"name":"reset"}
+  game.snapshot {"name":"before","canvas":"#game"}
+When "The player taps the game"
+  game.tap {"canvas":"#game","x":0.5,"y":0.5}
+Then "The score and scene change"
+  game.expectState {"path":"score","equals":1}
+  game.expectVisual {"name":"before","canvas":"#game","minChange":0.9}
+  game.checkpoint {"name":"game-result","canvas":"#game"}

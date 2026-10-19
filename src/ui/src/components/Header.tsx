@@ -134,6 +134,7 @@ export const Header = ({ isRightPanelOpen, onToggleRightPanel }: any) => {
 
       <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
         <button
+          aria-label="Toggle execution details"
           onClick={onToggleRightPanel}
           style={{
             background: "none",

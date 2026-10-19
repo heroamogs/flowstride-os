@@ -1,3 +1,4 @@
+import { logsForFile } from '../utils/flowHistory';
 import { BrowserView } from "../components/BrowserView";
 import { NetworkPanel } from "../components/NetworkPanel";
 import { ConsolePanel } from "../components/ConsolePanel";
@@ -9,7 +10,7 @@ export const RunnerView = ({
   isRightPanelOpen: boolean;
 }) => {
   const { logs, pageTitles, activeTestFile } = useFlowStore();
-  const latestLog = logs[logs.length - 1];
+  const latestLog = logsForFile(logs, activeTestFile).at(-1);
 
   const activeTitle = pageTitles[activeTestFile] || "New Tab";
 

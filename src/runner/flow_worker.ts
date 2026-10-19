@@ -1,3 +1,5 @@
+import { flowIdentity, videoFileName, projectPath } from '../utils/projectPaths';
+import { redactWorkerPayload, redactText } from '../security/redaction';
 import * as fs from "fs";
 import * as path from "path";
 import chalk from "chalk";
@@ -34,6 +36,7 @@ export interface SmartSelectorToken {
 export class FlowWorker extends EventEmitter {
   private isSilent = process.env.FLOWSTRIDE_PARALLEL === "true";
   private isAborted = false;
+  private bailTriggered = false;
   private isDebugHalted = false;
 
   private currentStepContext: string = "Initializing...";
@@ -63,7 +66,8 @@ export class FlowWorker extends EventEmitter {
   }
 
   private broadcast(type: string, payload: any) {
-    this.emit("worker_event", { type, payload });
+    const secrets = [this.config.machineToken || '', ...(this.dataGen?.sensitiveValues?.() || []), ...Object.entries(process.env).filter(([key]) => /password|token|secret|api.?key/i.test(key)).map(([,value]) => String(value)), ...Object.entries(this.localVariables).filter(([key]) => /password|passcode|token|secret|otp|api.?key/i.test(key)).map(([,value]) => String(value))];
+    this.emit('worker_event', { type, payload: redactWorkerPayload(type, payload, secrets, this.config.ci === false) });
   }
 
   private emitLog(
@@ -395,9 +399,11 @@ export class FlowWorker extends EventEmitter {
 
     this.activeAudioPath = undefined;
     this.isAborted = false;
+    this.bailTriggered = false;
     this.isDebugHalted = false;
 
     const sigintHandler = async () => {
+      if (this.config.ci) { this.abort(); return; }
       if (!this.isSilent) {
         console.log(
           chalk.yellow(
@@ -410,7 +416,7 @@ export class FlowWorker extends EventEmitter {
       try {
         await this.web.shutdown();
       } catch (e) {}
-      process.exit(0);
+      if (!this.config.ci) process.exit(0);
     };
 
     process.once("SIGINT", sigintHandler);
@@ -423,7 +429,7 @@ export class FlowWorker extends EventEmitter {
         );
         if (audioMatch && audioMatch[1]) {
           const rawPath = audioMatch[1];
-          const absolutePath = path.resolve(process.cwd(), rawPath);
+          const absolutePath = projectPath(process.cwd(), rawPath);
           if (!fs.existsSync(absolutePath)) {
             throw new Error(
               `Pre-launch initialization failed: Audio file not found at ${absolutePath}`,
@@ -435,12 +441,13 @@ export class FlowWorker extends EventEmitter {
       }
 
       for (const filePath of filesToProcess) {
-        if (this.isAborted || this.isDebugHalted) break;
+        if (this.isAborted || this.isDebugHalted || this.bailTriggered) break;
 
         const fileStartTime = Date.now();
         try {
-          const fileName = path.basename(filePath);
+          const fileName = flowIdentity(filePath, this.config.flowRoot);
           this.currentFileName = fileName;
+          this.config.testFile = fileName;
 
           this.localVariables = {};
           this.localBrowserSessions = {};
@@ -504,13 +511,13 @@ export class FlowWorker extends EventEmitter {
           }
 
           for (const f of features) {
-            if (this.isAborted || this.isDebugHalted) break;
+            if (this.isAborted || this.isDebugHalted || this.bailTriggered) break;
             if (f.scenarios.length === 0) continue;
 
             if (!this.isSilent)
               console.log(chalk.magenta.bold(`  Feature: ${f.name}`));
             for (const s of f.scenarios) {
-              if (this.isAborted || this.isDebugHalted) break;
+              if (this.isAborted || this.isDebugHalted || this.bailTriggered) break;
 
               if (!this.isSilent)
                 console.log(chalk.cyan(`    Scenario: ${s.name}`));
@@ -522,7 +529,7 @@ export class FlowWorker extends EventEmitter {
 
               await this.runScenario(s, f.declarations);
 
-              if (this.isDebugHalted) break;
+              if (this.isDebugHalted || this.bailTriggered) break;
 
               await this.web
                 .getPage()
@@ -532,7 +539,7 @@ export class FlowWorker extends EventEmitter {
                 .getPage()
                 .waitForLoadState("networkidle", { timeout: 4000 })
                 .catch(() => {});
-              await new Promise((resolve) => setTimeout(resolve, 2000));
+              if (!this.config.ci) await new Promise((resolve) => setTimeout(resolve, 2000));
             }
           }
 
@@ -542,10 +549,10 @@ export class FlowWorker extends EventEmitter {
             console.log(
               chalk.gray("\n[Execution]: Finalizing browser actions..."),
             );
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+          if (!this.config.ci) await new Promise((resolve) => setTimeout(resolve, 2000));
 
           try {
-            const baseName = this.currentFileName.replace(".flow", "");
+            const baseName = videoFileName(this.currentFileName).replace(/\.webm$/, '');
             const mockCloudDir = path.join(
               process.cwd(),
               ".flowstride",
@@ -556,6 +563,7 @@ export class FlowWorker extends EventEmitter {
 
             const targetVideoPath = path.join(mockCloudDir, `${baseName}.webm`);
 
+            for (const message of this.web.pageErrors || []) this.broadcast('BROWSER_ERROR', { message, fileName: this.currentFileName });
             await this.web.shutdown(targetVideoPath);
             if (!this.isSilent)
               console.log(
@@ -580,7 +588,7 @@ export class FlowWorker extends EventEmitter {
             );
 
           try {
-            const baseName = this.currentFileName.replace(".flow", "");
+            const baseName = videoFileName(this.currentFileName).replace(/\.webm$/, '');
             const mockCloudDir = path.join(
               process.cwd(),
               ".flowstride",
@@ -591,6 +599,7 @@ export class FlowWorker extends EventEmitter {
 
             const targetVideoPath = path.join(mockCloudDir, `${baseName}.webm`);
 
+            for (const message of this.web.pageErrors || []) this.broadcast('BROWSER_ERROR', { message, fileName: this.currentFileName });
             await this.web.shutdown(targetVideoPath);
             if (!this.isSilent)
               console.log(
@@ -608,7 +617,7 @@ export class FlowWorker extends EventEmitter {
         }
       }
 
-      if (!this.isSilent && !this.isAborted) {
+      if (!this.config.ci && !this.isSilent && !this.isAborted) {
         if (this.isDebugHalted) {
           console.log(
             chalk.cyan("\n[Execution]: Test suite halted by debug flag."),
@@ -620,6 +629,13 @@ export class FlowWorker extends EventEmitter {
         }
       }
     } finally {
+      if (this.config.ci && this.isAborted) {
+        try {
+          const directory = path.join(process.cwd(), '.flowstride', 'artifacts');
+          fs.mkdirSync(directory, { recursive: true });
+          await this.web.shutdown(path.join(directory, videoFileName(this.currentFileName)));
+        } catch (error: any) { this.broadcast('WORKER_ERROR', { message: error.message }); }
+      }
       process.removeListener("SIGINT", sigintHandler);
     }
   }
@@ -628,6 +644,7 @@ export class FlowWorker extends EventEmitter {
     scenario: ScenarioNode,
     globalDeclarations: DeclarationNode[] = [],
   ) {
+    let hasScenarioFailed = false;
     for (const step of scenario.steps) {
       if (this.isAborted) break;
 
@@ -642,6 +659,12 @@ export class FlowWorker extends EventEmitter {
       this.currentStepContext = `${blockName} ${blockDesc}`;
 
       const isOpt = step.payload?.optional;
+      if (hasScenarioFailed) {
+        this.broadcast('STEP_ADD', { id: step.id, type: blockName, description: blockDesc, command: step.action, status: 'not_tested', fileName: this.currentFileName });
+        this.broadcast('STEP_UPDATE', { id: step.id, status: 'not_tested', fileName: this.currentFileName });
+        continue;
+      }
+
 
       const mockSpinner = {
         text: "",
@@ -831,7 +854,11 @@ export class FlowWorker extends EventEmitter {
           screenshot: stepContext.screenshot,
           fileName: this.currentFileName,
         });
-        throw e;
+        hasScenarioFailed = true;
+        if (this.config.bail && !this.bailTriggered) {
+          this.bailTriggered = true;
+          this.broadcast('BAIL', { fileName: this.currentFileName, id: step.id });
+        }
       }
     }
   }
@@ -1526,10 +1553,11 @@ export class FlowWorker extends EventEmitter {
       const urlObj = new URL(request.url());
       const endpointName = urlObj.pathname.split("/").pop() || urlObj.pathname;
 
+      const requestHeaders = await request.allHeaders().catch(() => request.headers());
       const curlString = this.web.synthesizeCurl(
         request.method(),
         request.url(),
-        request.headers(),
+        requestHeaders,
         rawPostData,
       );
 
@@ -1540,7 +1568,7 @@ export class FlowWorker extends EventEmitter {
         {
           method: request.method(),
           url: request.url(),
-          requestHeaders: request.headers(),
+          requestHeaders: requestHeaders,
           requestBody: requestBody,
           responseStatus: response.status(),
           responseHeaders: response.headers(),
@@ -1570,6 +1598,7 @@ export class FlowWorker extends EventEmitter {
   }
 
   private async startStreaming() {
+    if (this.config.ci) return;
     const page = this.web.getPage();
     if (this.currentCdpSession) {
       await this.currentCdpSession.detach().catch(() => {});

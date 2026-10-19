@@ -1,0 +1,86 @@
+name: Engine release checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: engine-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  engine:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.12.0', '24']
+    env:
+      CI: 'true'
+      PLAYWRIGHT_SKIP_BROWSER_GC: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            src/ui/package-lock.json
+      - name: Install locked engine dependencies
+        run: npm ci --ignore-scripts --workspaces=false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: '1.97.1'
+          targets: wasm32-unknown-unknown
+      - name: Install pinned WASM builder
+        run: cargo install wasm-pack --version 0.15.0 --locked
+      - name: Build WASM dependency
+        working-directory: src/workspace_engine
+        run: wasm-pack build --target web --release --locked
+      - name: Install locked dashboard dependencies
+        working-directory: src/ui
+        run: npm ci --ignore-scripts
+      - name: Build engine and dashboard from source
+        run: npm run build:candidate
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Security regression tests
+        run: npm run test:security
+      - name: Audit shipped engine dependencies
+        run: npm audit --omit=dev --workspaces=false --audit-level=high
+      - name: Audit dashboard runtime dependencies
+        working-directory: src/ui
+        run: npm audit --omit=dev --audit-level=high
+      - name: Install matching Chromium and Linux dependencies
+        run: node dist/cli/index.js install --with-deps
+      - name: Install real Three.js fixture
+        run: npm install --prefix "$RUNNER_TEMP/flowstride-three" --ignore-scripts --no-audit --no-fund three@0.186.1
+      - name: Native CI, game, upload, failure and dashboard acceptance
+        env:
+          FLOWSTRIDE_THREE_BUILD: ${{ runner.temp }}/flowstride-three/node_modules/three/build
+        run: npm test
+      - name: Verify and package candidate
+        run: |
+          npm run verify:candidate
+          npm pack --ignore-scripts --json > package-inventory.json
+          node scripts/check-package.cjs package-inventory.json
+      - name: Validate clean archive installation and real execution
+        run: node scripts/qualify-archive.mjs . "$RUNNER_TEMP/flowstride-archive-acceptance"
+      - name: Report development dependency advisories
+        if: always()
+        run: |
+          npm audit --json > development-audit.json || echo "::warning::Development dependency advisories are recorded in the audit artifact."
+      - name: Retain candidate and checks
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: candidate-node-${{ matrix.node }}-${{ github.sha }}
+          path: |
+            *.tgz
+            package-inventory.json
+            development-audit.json
+          retention-days: 14

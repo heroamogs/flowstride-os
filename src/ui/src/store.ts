@@ -1,3 +1,4 @@
+import { flowStep, restoredStepId } from './utils/flowHistory';
 import { create } from "zustand";
 
 export type LogType =
@@ -51,6 +52,7 @@ interface AppState {
   timer: number;
   completedSteps: string[];
   activeStepId: string | null;
+  historicalStepIds: Record<string, string | null>;
   activeView: string;
   activeTestFile: string;
   activeHistoricalRunId: string | null;
@@ -104,6 +106,7 @@ export const useFlowStore = create<AppState>((set) => ({
   timer: 0,
   completedSteps: [],
   activeStepId: null,
+  historicalStepIds: {},
   activeView: "Flows",
   activeTestFile: "",
   activeHistoricalRunId: null,
@@ -122,8 +125,25 @@ export const useFlowStore = create<AppState>((set) => ({
   setNetworkTab: (tab) => set({ activeNetworkTab: tab }),
   setStepComplete: (id) =>
     set((state) => ({ completedSteps: [...state.completedSteps, id] })),
-  setActiveStepId: (id) => set({ activeStepId: id }),
-  setActiveTestFile: (fileName) => set({ activeTestFile: fileName }),
+  setActiveStepId: (selection) => set((state) => {
+    const separator = selection?.lastIndexOf(':::') ?? -1;
+    const file = separator === -1 ? state.activeTestFile : selection!.slice(0, separator);
+    const step = flowStep(state.testScenarios, file, selection);
+    if (selection && !step) return state;
+    const id = step?.id || null;
+    return {
+      activeTestFile: file,
+      activeStepId: id ? `${file}:::${id}` : null,
+      historicalStepIds: { ...state.historicalStepIds, [file]: id },
+      ...(file !== state.activeTestFile ? { selectedLogId: null, activeReplay: null } : {}),
+    };
+  }),
+  setActiveTestFile: (file) => set((state) => file === state.activeTestFile ? state : ({
+    activeTestFile: file,
+    activeStepId: restoredStepId(state, file),
+    selectedLogId: null,
+    activeReplay: null,
+  })),
   setActiveHistoricalRunId: (id) => set({ activeHistoricalRunId: id }),
 
   setSelectedLogId: (id) =>
@@ -171,6 +191,7 @@ export const useFlowStore = create<AppState>((set) => ({
       timer: 0,
       completedSteps: [],
       activeStepId: null,
+      historicalStepIds: {},
       logs: [],
       networkLogs: [],
       assertions: [],
@@ -203,7 +224,7 @@ export const useFlowStore = create<AppState>((set) => ({
       });
       return {
         isRunning: false,
-        activeStepId: null,
+        activeStepId: restoredStepId({ ...state, isRunning: false, testScenarios: finalizedScenarios }, state.activeTestFile),
         testScenarios: finalizedScenarios,
       };
     }),
@@ -214,8 +235,11 @@ export const useFlowStore = create<AppState>((set) => ({
       if (!targetFile) return state;
 
       const normalizedScenario = scenarioName || "Default Scenario";
-      const newActiveFile =
-        state.activeTestFile === "" ? targetFile : state.activeTestFile;
+      const runningScenariosCount = state.testScenarios.filter(
+        scenario => scenario.status === 'running' && scenario.fileName !== targetFile,
+      ).length;
+      const newActiveFile = state.activeTestFile === '' || runningScenariosCount === 0
+        ? targetFile : state.activeTestFile;
 
       const existingIndex = state.testScenarios.findIndex(
         (s) => s.fileName === targetFile && s.name === normalizedScenario,
@@ -238,7 +262,10 @@ export const useFlowStore = create<AppState>((set) => ({
         });
       }
 
-      return { activeTestFile: newActiveFile, testScenarios: updatedScenarios };
+      return {
+        activeTestFile: newActiveFile, testScenarios: updatedScenarios,
+        ...(newActiveFile !== state.activeTestFile ? { activeStepId: null, selectedLogId: null, activeReplay: null } : {}),
+      };
     }),
 
   addStep: (step) =>
