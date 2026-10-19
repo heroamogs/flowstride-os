@@ -1,3 +1,5 @@
+import { projectPath } from '../../utils/projectPaths';
+import { readManualPayload, ManualInputError } from '../../manual/security';
 import * as http from "http";
 import * as path from "path";
 import * as fs from "fs";
@@ -17,12 +19,12 @@ export async function startManualWorkspaceServer(): Promise<void> {
     process.exit(1);
   }
 
-  const manualFlowsDir = path.join(process.cwd(), "manual_flows");
-  const templatesDir = path.join(manualFlowsDir, "templates");
-  const runsDir = path.join(manualFlowsDir, "runs");
-  const mediaDir = path.join(manualFlowsDir, "media");
-  const defectMediaDir = path.join(manualFlowsDir, "defect_media");
-  const workspaceStateFile = path.join(manualFlowsDir, ".workspace_state.json");
+  const manualFlowsDir = projectPath(process.cwd(), path.join(process.cwd(), "manual_flows"));
+  const templatesDir = projectPath(process.cwd(), path.join(manualFlowsDir, "templates"));
+  const runsDir = projectPath(process.cwd(), path.join(manualFlowsDir, "runs"));
+  const mediaDir = projectPath(process.cwd(), path.join(manualFlowsDir, "media"));
+  const defectMediaDir = projectPath(process.cwd(), path.join(manualFlowsDir, "defect_media"));
+  const workspaceStateFile = projectPath(process.cwd(), path.join(manualFlowsDir, ".workspace_state.json"));
 
   if (!fs.existsSync(templatesDir))
     fs.mkdirSync(templatesDir, { recursive: true });
@@ -75,7 +77,7 @@ export async function startManualWorkspaceServer(): Promise<void> {
       }
 
       const safeFilename = `media_${Date.now()}_${Math.random().toString(36).substring(2, 9)}${ext.toLowerCase()}`;
-      const filePath = path.join(mediaDir, safeFilename);
+      const filePath = projectPath(process.cwd(), path.join(mediaDir, safeFilename));
 
       const MAX_SIZE = 104857600;
       let uploadedSize = 0;
@@ -133,7 +135,7 @@ export async function startManualWorkspaceServer(): Promise<void> {
         }
         const rawFilename = targetPath.replace("/media/", "");
         const safeFilename = path.basename(rawFilename);
-        const filePath = path.join(mediaDir, safeFilename);
+        const filePath = projectPath(process.cwd(), path.join(mediaDir, safeFilename));
 
         if (!fs.existsSync(filePath)) {
           res.writeHead(404, { "Content-Type": "application/json" });
@@ -172,7 +174,7 @@ export async function startManualWorkspaceServer(): Promise<void> {
     if (req.method === "GET" && pathname.startsWith("/media/")) {
       const filename = pathname.replace("/media/", "");
       const safeFilename = path.basename(filename);
-      const filePath = path.join(mediaDir, safeFilename);
+      const filePath = projectPath(process.cwd(), path.join(mediaDir, safeFilename));
 
       if (!fs.existsSync(filePath)) {
         res.writeHead(404);
@@ -229,7 +231,7 @@ export async function startManualWorkspaceServer(): Promise<void> {
       }
 
       const safeFilename = `defect_${Date.now()}_${Math.random().toString(36).substring(2, 9)}${ext.toLowerCase()}`;
-      const filePath = path.join(defectMediaDir, safeFilename);
+      const filePath = projectPath(process.cwd(), path.join(defectMediaDir, safeFilename));
 
       const MAX_SIZE = 41943040; // Capped at 40MB
       let uploadedSize = 0;
@@ -292,7 +294,7 @@ export async function startManualWorkspaceServer(): Promise<void> {
         const rawFilename = targetPath.replace("/defect_media/", "");
         const safeFilename = path.basename(rawFilename);
 
-        const filePath = path.join(defectMediaDir, safeFilename);
+        const filePath = projectPath(process.cwd(), path.join(defectMediaDir, safeFilename));
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
           console.log(
@@ -328,7 +330,7 @@ export async function startManualWorkspaceServer(): Promise<void> {
     if (req.method === "GET" && pathname.startsWith("/defect_media/")) {
       const filename = pathname.replace("/defect_media/", "");
       const safeFilename = path.basename(filename);
-      const filePath = path.join(defectMediaDir, safeFilename);
+      const filePath = projectPath(process.cwd(), path.join(defectMediaDir, safeFilename));
 
       if (!fs.existsSync(filePath)) {
         res.writeHead(404);
@@ -374,15 +376,15 @@ export async function startManualWorkspaceServer(): Promise<void> {
     // ============================================================================
 
     if (req.method === "POST" && pathname === "/api/save-design") {
-      let body = "";
-
-      req.on("data", (chunk) => {
-        body += chunk.toString();
-      });
-
-      req.on("end", () => {
+      let payload;
+      try { payload = await readManualPayload(req); }
+      catch (error) {
+        res.writeHead(error instanceof ManualInputError ? error.status : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error instanceof ManualInputError ? error.message : 'Invalid manual payload' }));
+        return;
+      }
+      const savePayload = async () => {
         try {
-          const payload = JSON.parse(body);
           const rawFilename = payload.filename || `New Flow.json`;
           const canvasData = payload.canvasData;
 
@@ -398,7 +400,7 @@ export async function startManualWorkspaceServer(): Promise<void> {
             safeFilename += ".json";
           }
 
-          const filePath = path.join(templatesDir, safeFilename);
+          const filePath = projectPath(process.cwd(), path.join(templatesDir, safeFilename));
           fs.writeFileSync(
             filePath,
             JSON.stringify(canvasData, null, 2),
@@ -429,7 +431,8 @@ export async function startManualWorkspaceServer(): Promise<void> {
             }),
           );
         }
-      });
+      };
+      await savePayload();
       return;
     }
 
@@ -484,7 +487,7 @@ export async function startManualWorkspaceServer(): Promise<void> {
           );
         }
 
-        const filePath = path.join(templatesDir, safeFilename);
+        const filePath = projectPath(process.cwd(), path.join(templatesDir, safeFilename));
 
         if (!fs.existsSync(filePath)) {
           res.writeHead(404, { "Content-Type": "application/json" });
@@ -530,7 +533,7 @@ export async function startManualWorkspaceServer(): Promise<void> {
           );
         }
 
-        const filePath = path.join(templatesDir, safeFilename);
+        const filePath = projectPath(process.cwd(), path.join(templatesDir, safeFilename));
 
         if (!fs.existsSync(filePath)) {
           res.writeHead(404, { "Content-Type": "application/json" });
@@ -565,15 +568,15 @@ export async function startManualWorkspaceServer(): Promise<void> {
     }
 
     if (req.method === "POST" && pathname === "/api/save-run") {
-      let body = "";
-
-      req.on("data", (chunk) => {
-        body += chunk.toString();
-      });
-
-      req.on("end", async () => {
+      let payload;
+      try { payload = await readManualPayload(req); }
+      catch (error) {
+        res.writeHead(error instanceof ManualInputError ? error.status : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error instanceof ManualInputError ? error.message : 'Invalid manual payload' }));
+        return;
+      }
+      const savePayload = async () => {
         try {
-          const payload = JSON.parse(body);
           const rawFilename =
             payload.filename || `Execution_Run_${Date.now()}.json`;
           const canvasData = payload.canvasData;
@@ -589,7 +592,7 @@ export async function startManualWorkspaceServer(): Promise<void> {
           const dayFolder = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
           const timeFolder = `${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}-${String(now.getSeconds()).padStart(2, "0")}`;
 
-          const runTargetDir = path.join(runsDir, dayFolder, timeFolder);
+          const runTargetDir = projectPath(process.cwd(), path.join(runsDir, dayFolder, timeFolder));
 
           if (!fs.existsSync(runTargetDir)) {
             fs.mkdirSync(runTargetDir, { recursive: true });
@@ -600,7 +603,7 @@ export async function startManualWorkspaceServer(): Promise<void> {
             safeFilename += ".json";
           }
 
-          const filePath = path.join(runTargetDir, safeFilename);
+          const filePath = projectPath(process.cwd(), path.join(runTargetDir, safeFilename));
           fs.writeFileSync(
             filePath,
             JSON.stringify(canvasData, null, 2),
@@ -637,7 +640,8 @@ export async function startManualWorkspaceServer(): Promise<void> {
             }),
           );
         }
-      });
+      };
+      await savePayload();
       return;
     }
 
@@ -751,7 +755,7 @@ export async function startManualWorkspaceServer(): Promise<void> {
           );
         }
 
-        const filePath = path.join(runsDir, targetFilename);
+        const filePath = projectPath(process.cwd(), path.join(runsDir, targetFilename));
         const resolvedPath = path.resolve(filePath);
         const resolvedRunsDir = path.resolve(runsDir);
 

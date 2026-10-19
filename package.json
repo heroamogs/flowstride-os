@@ -1,6 +1,6 @@
 {
   "name": "flowstride",
-  "version": "1.0.19",
+  "version": "1.0.20-rc.6",
   "description": "An opensource flowfirst test automation framework",
   "workspaces": [
     "packages/flowstride_report"
@@ -9,7 +9,9 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
-    "src/ui/dist"
+    "src/ui/dist",
+    "NATIVE_CI.md",
+    "examples/native-game"
   ],
   "bin": {
     "flowstride": "dist/cli/index.js"
@@ -17,8 +19,16 @@
   "scripts": {
     "build": "tsc",
     "flowstride": "node ./dist/cli/index.js",
-    "test": "echo 'Test script to be configured'",
-    "prepublishOnly": "npm run build"
+    "test": "npm run test:native && npm run test:manual-security && npm run test:dashboard",
+    "prepublishOnly": "npm run build:candidate && npm run verify:candidate",
+    "test:native": "node --test --test-concurrency=1 tests/native/*.test.cjs",
+    "test:manual-security": "node --test tests/manual-security.test.cjs",
+    "build:candidate": "node scripts/build-candidate.cjs",
+    "verify:candidate": "node scripts/verify-candidate.cjs",
+    "test:dashboard:unit": "node --test tests/dashboard/store.test.cjs",
+    "test:dashboard": "node --test --test-concurrency=1 tests/dashboard/*.test.cjs",
+    "test:unit": "node --test tests/native/core.test.cjs tests/native/combined.test.cjs tests/native/curl.test.cjs tests/native/upload.test.cjs tests/dashboard/store.test.cjs",
+    "test:security": "node --test tests/manual-security.test.cjs tests/native/curl.test.cjs tests/native/combined.test.cjs"
   },
   "keywords": [
     "automation",
@@ -29,30 +39,36 @@
   "author": "Samuel Okolo",
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.12.0"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.10.1",
-    "axios": "^1.18.0",
+    "axios": "^1.20.0",
     "chalk": "^4.1.2",
     "commander": "^11.0.0",
     "dotenv": "^17.4.2",
     "open": "^11.0.0",
     "ora": "^5.4.1",
-    "playwright": "^1.59.1",
+    "playwright": "1.59.1",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "tar": "^7.5.16",
+    "tar": "^7.5.22",
     "ts-node": "^10.9.2",
-    "undici": "^7.25.0",
-    "ws": "^8.20.1"
+    "undici": "^7.30.1",
+    "ws": "^8.22.0",
+    "sanitize-html": "2.18.1",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
     "@types/ws": "^8.18.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "@types/sanitize-html": "2.16.2"
   },
   "optionalDependencies": {
     "@rolldown/binding-darwin-arm64": "^0.15.1"
+  },
+  "publishConfig": {
+    "tag": "next"
   }
 }

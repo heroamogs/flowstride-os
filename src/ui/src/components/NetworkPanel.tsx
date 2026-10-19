@@ -1,9 +1,11 @@
+import { logsForFile } from '../utils/flowHistory';
 import { Search, Filter } from "lucide-react";
 import { useFlowStore } from "../store";
 
 export const NetworkPanel = () => {
   const {
     networkLogs,
+    activeTestFile,
     activeNetworkTab,
     setNetworkTab,
     setSelectedLogId,
@@ -17,7 +19,7 @@ export const NetworkPanel = () => {
     "WS",
   ];
 
-  const filteredLogs = networkLogs.filter((log) => {
+  const filteredLogs = logsForFile(networkLogs, activeTestFile).filter((log) => {
     if (activeNetworkTab === "GraphQL") return log.url.includes("graphql");
     if (activeNetworkTab === "REST")
       return !log.url.includes("graphql") && !log.url.includes("ws");

@@ -398,7 +398,9 @@ export const LogsView = () => {
         return (
           <div style={{ position: "relative" }}>
             <button
-              onClick={() => copyToClipboard(details.curlString)}
+              onClick={() => copyToClipboard(details.rawCurlString || details.curlString)}
+              disabled={!details.rawCurlString && details.curlString === '[REDACTED]'}
+              title={!details.rawCurlString && details.curlString === '[REDACTED]' ? 'This command was redacted. Rerun the flow locally to capture a new command.' : 'Copy the original local request, including its headers and body.'}
               style={{
                 position: "absolute",
                 top: "10px",
@@ -430,7 +432,7 @@ export const LogsView = () => {
                 </>
               ) : (
                 <>
-                  <Copy size={12} /> Copy
+                  <Copy size={12} /> Copy raw cURL
                 </>
               )}
             </button>
@@ -438,7 +440,7 @@ export const LogsView = () => {
               style={{
                 background: "#05070a",
                 padding: "20px 15px",
-                paddingRight: "90px", // Prevent text overlapping the button
+                paddingRight: "160px", // Prevent text overlapping the button
                 borderRadius: "8px",
                 border: "1px solid #30363d",
                 color: "#a5d6ff",

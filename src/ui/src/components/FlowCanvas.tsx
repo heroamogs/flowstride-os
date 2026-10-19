@@ -1,3 +1,4 @@
+import { sanitizeImportedCanvas } from '../utils/manualContent';
 import {
   useRef,
   useEffect,
@@ -118,6 +119,7 @@ export const FlowCanvas = forwardRef<FlowCanvasImperativeAPI, FlowCanvasProps>(
       },
 
       importDesignState: (parsedData: any) => {
+        parsedData = sanitizeImportedCanvas(parsedData);
         const api = getEngineAPI();
         if (api && isCanvasReady) {
           api.importDesignState(parsedData);

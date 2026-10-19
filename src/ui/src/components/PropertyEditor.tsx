@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import DOMPurify from "dompurify";
+import { sanitizeManualHtml } from '../utils/manualContent';
 import {
   Bold,
   Italic,
@@ -52,8 +52,9 @@ const RichTextEditorGroup = ({
   const editorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (editorRef.current && value !== editorRef.current.innerHTML) {
-      editorRef.current.innerHTML = value;
+    const cleanValue = sanitizeManualHtml(value);
+    if (editorRef.current && cleanValue !== editorRef.current.innerHTML) {
+      editorRef.current.innerHTML = cleanValue;
     }
   }, [value]);
 
@@ -61,23 +62,7 @@ const RichTextEditorGroup = ({
     if (editorRef.current && onChange) {
       const rawHtml = editorRef.current.innerHTML;
 
-      const cleanHtml = DOMPurify.sanitize(rawHtml, {
-        ALLOWED_TAGS: [
-          "b",
-          "i",
-          "em",
-          "strong",
-          "a",
-          "ul",
-          "ol",
-          "li",
-          "br",
-          "div",
-          "p",
-          "font",
-        ],
-        ALLOWED_ATTR: ["href", "target", "rel", "size"],
-      });
+      const cleanHtml = sanitizeManualHtml(rawHtml);
       onChange(cleanHtml);
     }
   };

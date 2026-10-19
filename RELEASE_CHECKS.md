@@ -1,0 +1,7 @@
+Release checks run on pushes, pull requests and manual dispatches. They use read-only GitHub permissions and actions pinned to full commit hashes. Node 22.12.0 and Node 24 each build the Rust/WASM dashboard and TypeScript engine from locked dependencies, then run unit tests, security regressions, real Chromium native CI/game/upload/failure/dashboard tests, package inventory checks and clean archive consumer acceptance.
+
+Runtime dependency audits for the engine and dashboard block high/critical findings. Full development dependency audits are retained and warn separately; a passing check does not assert that development dependencies have no advisories. The development servers should not be exposed as production services. Billing is maintained separately in the private Cloud repository.
+
+OSS CI never receives private Pro source or credentials. Pro CI and its candidate artifacts remain in the private repository. Conditional tests requiring both engines or Cloud source are also run locally during release qualification; their skips in a standalone repository are expected. Supported game coverage is browser canvas and the pinned Three.js fixture on Chromium; other engines/devices require separate qualification.
+
+Publishing is a separate authorized release operation. OSS previews use npm's `next` tag. Pro archives are delivered by the owner through the existing private host; these workflows do not upload them there or change Cloud's download target.

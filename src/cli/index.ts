@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+import { cloudApiBase, cloudFailure } from '../utils/cloud';
+import { loadCloudEnvironment, cloudSessionDescription, tokenExpiryDescription } from './utils/cloudSession';
+import { loadNativeConfig } from '../ci/config';
+import { initCI } from '../ci/init';
 import { Command } from "commander";
 import { runAction } from "./commands/run";
 import { reportAction } from "./commands/report";
@@ -7,19 +11,24 @@ import { openAction } from "./commands/open";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { execSync } from "child_process";
+import { installProEngine } from "./utils/proInstaller";
 import { password, confirm } from "@inquirer/prompts";
 import chalk from "chalk";
 import ora from "ora";
 
 const program = new Command();
-const API_BASE =
-  process.env.FLOWSTRIDE_API_URL || "https://cloud.flowstride.io";
+program.hook('preAction', (_program, command) => {
+  if (['login', 'status', 'run', 'update'].includes(command.name())) {
+    API_BASE = loadCloudEnvironment(process.cwd(), command.opts().env);
+  }
+});
+
+let API_BASE = cloudApiBase(process.env);
 
 program
   .name("flowstride")
   .description("Flowstride: The Enterprise Flow-First Automation CLI")
-  .version("1.0.19");
+  .version("1.0.20-rc.6");
 
 program
   .command("init")
@@ -89,6 +98,7 @@ program
       process.exit(1);
     }
 
+    console.log(`[Cloud]: ${API_BASE}; login credential source: ${process.env.FLOWSTRIDE_TOKEN ? 'FLOWSTRIDE_TOKEN (environment)' : options.token ? '--token option' : 'interactive prompt'}`);
     const deviceName = os.hostname();
     const spinner = ora("Authenticating with Cloud...").start();
 
@@ -107,13 +117,14 @@ program
       if (!response.ok) {
         spinner.fail(
           chalk.red(
-            `Authentication Failed: ${data.error || "Invalid token or network error"}`,
+            `Authentication Failed: ${cloudFailure({ response: { status: response.status, data } }, [token.trim()]).message}`,
           ),
         );
         process.exit(1);
       }
 
       spinner.succeed(chalk.green("Authentication Successful!"));
+      console.log(tokenExpiryDescription(data));
 
       const configDir = options.global
         ? path.join(os.homedir(), ".flowstride")
@@ -174,68 +185,13 @@ program
             const installSpinner = ora(
               "Downloading Enterprise Engine via secure proxy...",
             ).start();
-            const tarballPath = path.join(process.cwd(), "flowstride-pro.tgz");
-
             try {
-              const tarballResponse = await fetch(
-                `${API_BASE}/api/workspace/download-pro`,
-                {
-                  method: "GET",
-                  headers: { Authorization: `Bearer ${token.trim()}` },
-                },
-              );
-
-              if (!tarballResponse.ok) {
-                throw new Error(
-                  `Secure proxy rejected request: ${tarballResponse.statusText}`,
-                );
-              }
-
-              const buffer = await tarballResponse.arrayBuffer();
-              fs.writeFileSync(tarballPath, Buffer.from(buffer));
-
-              installSpinner.text = "Wiring up Enterprise dependencies...";
-              installSpinner.color = "cyan";
-
-              // Let npm natively handle the extraction and binary symlinking
-              execSync(`npm install "${tarballPath}" --no-save`, {
-                cwd: process.cwd(),
-                stdio: "ignore",
-              });
-
-              installSpinner.succeed(
-                chalk.green("Enterprise Engine installed successfully!"),
-              );
-            } catch (installError) {
-              installSpinner.stop();
-
-              console.error(
-                chalk.bgRed.white("\n[RAW SYSTEM ERROR]:"),
-                installError,
-              );
-
-              console.log(
-                chalk.red(
-                  "\n✖ Failed to install the Enterprise Engine. Please check your internet connection or verify your project configuration.",
-                ),
-              );
-
-              if (fs.existsSync(nodeModulesPath)) {
-                fs.rmSync(nodeModulesPath, { recursive: true, force: true });
-              }
-
-              console.log(
-                chalk.yellow(
-                  "⚠️ Reverting login: Enterprise Engine is required to sync.",
-                ),
-              );
-              if (fs.existsSync(credentialsPath))
-                fs.unlinkSync(credentialsPath);
-              process.exit(1);
-            } finally {
-              if (fs.existsSync(tarballPath)) {
-                fs.unlinkSync(tarballPath);
-              }
+              await installProEngine(API_BASE, token.trim());
+              installSpinner.succeed(chalk.green("Enterprise Engine installed successfully!"));
+            } catch (error) {
+              installSpinner.fail(error instanceof Error ? error.message : "Enterprise installation failed");
+              console.log(chalk.yellow("Credentials remain available. You can retry installation; runs can fall back to the Open Source engine."));
+              process.exitCode = 1;
             }
           } else {
             console.log(chalk.yellow(`\n⚠️ Installation skipped.`));
@@ -257,7 +213,7 @@ program
       );
     } catch (error: any) {
       spinner.fail(
-        chalk.red(`Network Error: Could not connect to cloud.flowstride.io`),
+        chalk.red(cloudFailure(error, [token.trim()]).message),
       );
       process.exit(1);
     }
@@ -269,7 +225,8 @@ program
     "Display the current Flowstride CLI authentication and engine tier",
   )
   .action(async () => {
-    let token = process.env.FLOWSTRIDE_TOKEN || null;
+    console.log(cloudSessionDescription(API_BASE));
+    let token = process.env.FLOWSTRIDE_TOKEN?.trim() || null;
     const localCredentialsPath = path.join(
       process.cwd(),
       ".flowstride",
@@ -290,7 +247,7 @@ program
           const credentials = JSON.parse(
             fs.readFileSync(localCredentialsPath, "utf8"),
           );
-          token = credentials.machineToken;
+          token = credentials.machineToken?.trim() || null;
         } catch (err) {}
       } else if (fs.existsSync(globalCredentialsPath)) {
         activeCredentialsPath = globalCredentialsPath;
@@ -298,7 +255,7 @@ program
           const credentials = JSON.parse(
             fs.readFileSync(globalCredentialsPath, "utf8"),
           );
-          token = credentials.machineToken;
+          token = credentials.machineToken?.trim() || null;
         } catch (err) {}
       }
     }
@@ -331,13 +288,14 @@ program
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (response.status === 401) {
+      if (response.status === 401 || response.status === 403) {
+        const failureData = await response.json().catch(() => ({}));
         console.log(
           chalk.red(
-            "🔴 AUTH EXPIRED: Your device session was revoked or expired.",
+            cloudFailure({ response: { status: response.status, data: failureData } }, [token]).message,
           ),
         );
-        if (fs.existsSync(activeCredentialsPath))
+        if (response.status === 401 && !process.env.FLOWSTRIDE_TOKEN && fs.existsSync(activeCredentialsPath))
           fs.unlinkSync(activeCredentialsPath);
       } else if (response.ok) {
         const data = await response.json();
@@ -377,6 +335,10 @@ program
     "--workers <number>",
     "Number of parallel workers to spawn (Pro feature)",
   )
+  .option('--ci', 'Run without a dashboard and write CI reports')
+  .option('--device <profile>', 'desktop, phone, or landscape')
+  .option('--config <file>', 'Path to the Flowstride configuration')
+  .option('--env <name>', 'Environment profile')
   .action(
     async (targetPath: string | undefined, options: Record<string, any>) => {
       if (typeof targetPath === "object") {
@@ -384,7 +346,9 @@ program
         targetPath = undefined;
       }
 
-      let token = process.env.FLOWSTRIDE_TOKEN || null;
+      if (options.ci) process.env.FLOWSTRIDE_NATIVE_CI = '1';
+      console.log(cloudSessionDescription(API_BASE));
+      let token = process.env.FLOWSTRIDE_TOKEN?.trim() || null;
       let forceOS = false;
 
       const localCredentialsPath = path.join(
@@ -406,7 +370,7 @@ program
             const credentials = JSON.parse(
               fs.readFileSync(localCredentialsPath, "utf8"),
             );
-            token = credentials.machineToken;
+            token = credentials.machineToken?.trim() || null;
           } catch (err) {}
         } else if (fs.existsSync(globalCredentialsPath)) {
           activeCredentialsPath = globalCredentialsPath;
@@ -414,7 +378,7 @@ program
             const credentials = JSON.parse(
               fs.readFileSync(globalCredentialsPath, "utf8"),
             );
-            token = credentials.machineToken;
+            token = credentials.machineToken?.trim() || null;
           } catch (err) {}
         }
       }
@@ -446,18 +410,32 @@ program
             headers: { Authorization: `Bearer ${token}` },
           });
 
-          if (response.status === 401) {
+          if (response.status === 401 || response.status === 403) {
+            const failureData = await response.json().catch(() => ({}));
             console.log(
               chalk.red(
-                "🔴 AUTH EXPIRED: Your device session was revoked or expired.",
+                cloudFailure({ response: { status: response.status, data: failureData } }, [token]).message,
               ),
             );
-            if (fs.existsSync(activeCredentialsPath))
+            if (response.status === 401 && !process.env.FLOWSTRIDE_TOKEN && fs.existsSync(activeCredentialsPath))
               fs.unlinkSync(activeCredentialsPath);
             forceOS = true;
           } else if (response.ok) {
             const data = await response.json();
             const tier = data.tier.toUpperCase();
+            if (loadNativeConfig(process.cwd(), options).ci && fs.existsSync(nodeModulesPath)) {
+              const workspaceResponse = await fetch(`${API_BASE}/api/workspace/status`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!workspaceResponse.ok) forceOS = await handleOfflinePrompt();
+              else {
+                const workspaceData = await workspaceResponse.json();
+                options.manifest = workspaceData.manifest;
+                options.workspaceId = workspaceData.workspace?._id;
+                options.isCloudSyncActive = true;
+              }
+            }
+
 
             if (tier === "PERSONAL") {
               console.log(
@@ -484,7 +462,7 @@ program
         options.headless = false;
       }
 
-      const resolvedTargetPath = targetPath ? targetPath : "./flows";
+      const resolvedTargetPath = targetPath || loadNativeConfig(process.cwd(), options).testDir!;
       const strictUiFlowsDir = path.resolve(process.cwd(), resolvedTargetPath);
 
       if (!fs.existsSync(strictUiFlowsDir)) {
@@ -496,6 +474,11 @@ program
       }
 
       options.forceOS = forceOS;
+      if (!forceOS && token) {
+        options.machineToken = token;
+        const file = fs.existsSync(localCredentialsPath) ? localCredentialsPath : globalCredentialsPath;
+        if (!options.workspaceId && fs.existsSync(file)) options.workspaceId = JSON.parse(fs.readFileSync(file, 'utf8')).workspaceId;
+      }
       await runAction(strictUiFlowsDir, options);
     },
   );
@@ -507,7 +490,7 @@ async function handleOfflinePrompt(): Promise<boolean> {
     ),
   );
 
-  if (process.env.CI || process.env.FLOWSTRIDE_TOKEN) {
+  if (process.env.CI || process.env.FLOWSTRIDE_NATIVE_CI || process.env.FLOWSTRIDE_TOKEN) {
     console.log(
       chalk.yellow(
         "⚠️ CI/CD Environment: Automatically falling back to OS Engine.",
@@ -541,5 +524,19 @@ program
   .action(async () => {
     await openAction();
   });
+
+program.command('install')
+  .description('Install Chromium matching this Flowstride engine')
+  .option('--with-deps', 'Install operating-system browser dependencies')
+  .action((options: { withDeps?: boolean }) => {
+    const { execFileSync } = require('node:child_process');
+    execFileSync(process.execPath, [path.join(path.dirname(require.resolve('playwright/package.json')), 'cli.js'), 'install', ...(options.withDeps ? ['--with-deps'] : []), 'chromium'], { stdio: 'inherit', env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_GC: '1' } });
+  });
+
+program.command('ci')
+  .description('Set up native Flowstride CI')
+  .command('init <provider>')
+  .description('Generate a GitHub Actions workflow without overwriting existing files')
+  .action((provider: string) => initCI(provider));
 
 program.parse(process.argv);
