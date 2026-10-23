@@ -67,15 +67,15 @@ For visual manual test design and execution:
 npx flowstride manual
 ```
 
-## Flowstride Pro
+## Flowstride Cloud
 
-Eligible Flowstride Cloud users install Pro through the authenticated private channel:
+Flowstride Cloud users authenticate through the private installation channel:
 
 ```sh
 npx flowstride login
 ```
 
-The OS CLI selects a compatible, authorized Pro engine when available and falls back to OS when Pro cannot be used. Pro is distributed privately.
+The OS CLI selects a compatible, authorized Cloud engine when available and falls back to OS when the Cloud engine cannot be used. The Cloud engine is distributed privately.
 
 ## Test data and artifacts
 
