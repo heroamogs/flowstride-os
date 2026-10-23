@@ -333,3 +333,9 @@ npx flowstride merge shard-1/summary.json shard-2/summary.json shard-3/summary.j
 Merging rejects missing/duplicate shards, mixed source suites and mixed browser configurations. A failed or interrupted shard cannot become a passing merge. Setup `.first.flow` files execute independently on every machine, so setup must be safe to repeat. Metrics count actual shard executions, including repeated setup work.
 
 For later runs, use `--shard-history path/to/timings.json` from a previous complete merge. Every machine must use the same file: history assigns longer files first while preserving deterministic, disjoint standard-file coverage. There is no hosted scheduling service or shared in-memory state between machines.
+
+## Browser compatibility notes
+
+Chromium's current stealth behavior can override an explicitly requested locale. Use Firefox or WebKit for locale-sensitive checks and verify the observed language. For HAR playback in Firefox/WebKit, leave forced browser-offline mode unset and stop the real server to verify the recording; combining forced offline mode and HAR can reject navigation before fulfillment.
+
+The maintained command reference, browser compatibility guide and API-to-UI examples are available in the [Flowstride documentation](https://docs.flowstride.io/guide/native-browser-workflows).

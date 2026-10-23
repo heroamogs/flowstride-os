@@ -12,9 +12,9 @@ npx flowstride install
 npx flowstride run flows --ci
 ```
 
-In CI, use `npm ci` before browser installation and test execution. Browser installation uses the Chromium version matching the installed Flowstride engine. Linux runners may require system browser dependencies; the generated GitHub workflow handles installation for its runner.
+In CI, use `npm ci` before browser installation and test execution. Browser installation uses the Chromium version matching the installed Flowstride engine by default. See [native browser workflows](NATIVE_BROWSER.md) for Firefox, WebKit and browser configuration. Linux runners may require system browser dependencies; the generated GitHub workflow handles installation for its runner.
 
-Eligible Pro users authenticate using `npx flowstride login`. In CI, supply the developer token through the `FLOWSTRIDE_TOKEN` secret, never in committed files. Install project dependencies before login, then install the matching browser and run the tests. The OS CLI uses compatible, authorized Pro installations and falls back to OS when Pro is unavailable.
+Cloud users authenticate using `npx flowstride login`. In CI, supply the developer token through the `FLOWSTRIDE_TOKEN` secret, never in committed files. Install project dependencies before login, then install the matching browser and run the tests. The OS CLI uses compatible, authorized Cloud engine installations and falls back to OS when the Cloud engine is unavailable.
 
 Generate a GitHub Actions workflow explicitly:
 
@@ -32,7 +32,7 @@ Malformed configuration and unsafe output paths fail before execution. Configura
 
 Native CI is selected by `--ci` or a recognized CI environment. It runs headlessly without a dashboard server and returns nonzero for failed, incomplete, crashed or interrupted execution. JSON and JUnit reports are written at the configured artifact root, which defaults to `flowstride-artifacts`. Media and attachments use a unique run directory referenced by the summary.
 
-Flow discovery is recursive. `.first.flow` files run before ordinary files. A failed scenario leaves its remaining steps untested and execution continues to later scenarios. `--bail` stops later work; Pro executes bail runs sequentially.
+Flow discovery is recursive. `.first.flow` files run before ordinary files. A failed scenario leaves its remaining steps untested and execution continues to later scenarios. `--bail` stops later work; the Cloud engine executes bail runs sequentially.
 
 An optional configured local web server is started and stopped with the run. Flowstride rejects a readiness URL that is already serving.
 
