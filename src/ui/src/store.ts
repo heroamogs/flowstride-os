@@ -1,3 +1,4 @@
+import { flowStep, restoredStepId } from './utils/flowHistory';
 import { create } from "zustand";
 
 export type LogType =
@@ -28,6 +29,8 @@ export interface ReplayState {
   response: any;
   status: number | null;
   isLoading: boolean;
+  error: string | null;
+  requestId: string | null;
 }
 
 export interface TestStep {
@@ -37,6 +40,10 @@ export interface TestStep {
   command: string;
   status: "running" | "pass" | "passed" | "success" | "failed" | "pending";
   screenshot?: string;
+  profile?: string;
+  attempt?: number;
+  domSnapshot?: string;
+  attemptHistory?: { attempt: number; status: string; screenshot?: string; domSnapshot?: string; profile?: string }[];
 }
 
 export interface TestScenario {
@@ -47,10 +54,13 @@ export interface TestScenario {
 }
 
 interface AppState {
+  browserInfo: Record<string, { engine: string; version: string; headless: boolean }>;
+  setBrowserInfo: (fileName: string, info: { engine: string; version: string; headless: boolean }) => void;
   isRunning: boolean;
   timer: number;
   completedSteps: string[];
   activeStepId: string | null;
+  historicalStepIds: Record<string, string | null>;
   activeView: string;
   activeTestFile: string;
   activeHistoricalRunId: string | null;
@@ -90,20 +100,24 @@ interface AppState {
     status: string,
     screenshot?: string,
     fileName?: string,
+    metadata?: { attempt?: number; profile?: string; domSnapshot?: string },
   ) => void;
   addNetworkLog: (payload: any) => void;
   addAssertion: (payload: any) => void;
   setSession: (sessionName: string) => void;
 
   updateReplay: (field: keyof ReplayState, value: any) => void;
-  setReplayResponse: (response: any, status: number) => void;
+  setReplayResponse: (response: any, status: number | null, error?: string | null, requestId?: string) => void;
 }
 
 export const useFlowStore = create<AppState>((set) => ({
+  browserInfo: {},
+  setBrowserInfo: (fileName, info) => set((state) => ({ activeTestFile: state.activeTestFile || fileName, browserInfo: { ...state.browserInfo, [fileName]: info } })),
   isRunning: false,
   timer: 0,
   completedSteps: [],
   activeStepId: null,
+  historicalStepIds: {},
   activeView: "Flows",
   activeTestFile: "",
   activeHistoricalRunId: null,
@@ -122,8 +136,25 @@ export const useFlowStore = create<AppState>((set) => ({
   setNetworkTab: (tab) => set({ activeNetworkTab: tab }),
   setStepComplete: (id) =>
     set((state) => ({ completedSteps: [...state.completedSteps, id] })),
-  setActiveStepId: (id) => set({ activeStepId: id }),
-  setActiveTestFile: (fileName) => set({ activeTestFile: fileName }),
+  setActiveStepId: (selection) => set((state) => {
+    const separator = selection?.lastIndexOf(':::') ?? -1;
+    const file = separator === -1 ? state.activeTestFile : selection!.slice(0, separator);
+    const step = flowStep(state.testScenarios, file, selection);
+    if (selection && !step) return state;
+    const id = step?.id || null;
+    return {
+      activeTestFile: file,
+      activeStepId: id ? `${file}:::${id}` : null,
+      historicalStepIds: { ...state.historicalStepIds, [file]: id },
+      ...(file !== state.activeTestFile ? { selectedLogId: null, activeReplay: null } : {}),
+    };
+  }),
+  setActiveTestFile: (file) => set((state) => file === state.activeTestFile ? state : ({
+    activeTestFile: file,
+    activeStepId: restoredStepId(state, file),
+    selectedLogId: null,
+    activeReplay: null,
+  })),
   setActiveHistoricalRunId: (id) => set({ activeHistoricalRunId: id }),
 
   setSelectedLogId: (id) =>
@@ -131,21 +162,16 @@ export const useFlowStore = create<AppState>((set) => ({
       const log = state.logs.find((l) => l.id === id);
       if (log && (log.type === "REST" || log.type === "GRAPHQL")) {
         const details = log.details || {};
+        const original = details.rawReplayRequest && typeof details.rawReplayRequest === 'object' ? details.rawReplayRequest : undefined;
         return {
           selectedLogId: id,
           activeReplay: {
-            method: details.method || "GET",
-            url: details.url || "",
-            headers: details.requestHeaders
-              ? JSON.stringify(details.requestHeaders, null, 2)
-              : "{\n  \n}",
-            body:
-              typeof details.requestBody === "object"
-                ? JSON.stringify(details.requestBody, null, 2)
-                : details.requestBody || "",
-            response: null,
-            status: null,
-            isLoading: false,
+            method: original?.method || details.method || 'GET',
+            url: original?.url || details.url || '',
+            headers: JSON.stringify(original?.headers || details.requestHeaders || {}, null, 2),
+            body: original ? original.body ?? '' : typeof details.requestBody === 'object'
+              ? JSON.stringify(details.requestBody, null, 2) : details.requestBody || '',
+            response: null, status: null, error: null, requestId: null, isLoading: false,
           },
         };
       }
@@ -171,11 +197,13 @@ export const useFlowStore = create<AppState>((set) => ({
       timer: 0,
       completedSteps: [],
       activeStepId: null,
+      historicalStepIds: {},
       logs: [],
       networkLogs: [],
       assertions: [],
       testScenarios: [],
       browserFrames: {},
+      browserInfo: {},
       currentUrls: {},
       pageTitles: {},
       selectedLogId: null,
@@ -203,7 +231,7 @@ export const useFlowStore = create<AppState>((set) => ({
       });
       return {
         isRunning: false,
-        activeStepId: null,
+        activeStepId: restoredStepId({ ...state, isRunning: false, testScenarios: finalizedScenarios }, state.activeTestFile),
         testScenarios: finalizedScenarios,
       };
     }),
@@ -214,8 +242,11 @@ export const useFlowStore = create<AppState>((set) => ({
       if (!targetFile) return state;
 
       const normalizedScenario = scenarioName || "Default Scenario";
-      const newActiveFile =
-        state.activeTestFile === "" ? targetFile : state.activeTestFile;
+      const runningScenariosCount = state.testScenarios.filter(
+        scenario => scenario.status === 'running' && scenario.fileName !== targetFile,
+      ).length;
+      const newActiveFile = state.activeTestFile === '' || runningScenariosCount === 0
+        ? targetFile : state.activeTestFile;
 
       const existingIndex = state.testScenarios.findIndex(
         (s) => s.fileName === targetFile && s.name === normalizedScenario,
@@ -238,7 +269,10 @@ export const useFlowStore = create<AppState>((set) => ({
         });
       }
 
-      return { activeTestFile: newActiveFile, testScenarios: updatedScenarios };
+      return {
+        activeTestFile: newActiveFile, testScenarios: updatedScenarios,
+        ...(newActiveFile !== state.activeTestFile ? { activeStepId: null, selectedLogId: null, activeReplay: null } : {}),
+      };
     }),
 
   addStep: (step) =>
@@ -286,7 +320,7 @@ export const useFlowStore = create<AppState>((set) => ({
       return { testScenarios: updatedScenarios };
     }),
 
-  updateStepStatus: (id, status, screenshot, fileName) =>
+  updateStepStatus: (id, status, screenshot, fileName, metadata) =>
     set((state) => {
       if (!fileName) return state;
 
@@ -301,10 +335,19 @@ export const useFlowStore = create<AppState>((set) => ({
         updated = true;
 
         const updatedSteps = [...scenario.steps];
+        const previous = updatedSteps[stepIndex];
+        const attempt = metadata?.attempt || previous.attempt || 1;
+        const history = [...(previous.attemptHistory || [])];
+        const evidence = { attempt, status, screenshot, domSnapshot: metadata?.domSnapshot, profile: metadata?.profile };
+        const historyIndex = history.findIndex(item => item.attempt === attempt);
+        if (historyIndex === -1) history.push(evidence); else history[historyIndex] = { ...history[historyIndex], ...evidence, screenshot: screenshot || history[historyIndex].screenshot };
         updatedSteps[stepIndex] = {
           ...updatedSteps[stepIndex],
           status: (status as any) || "pending",
-          screenshot: screenshot || updatedSteps[stepIndex].screenshot,
+          screenshot: screenshot || (attempt === (previous.attempt || 1) ? previous.screenshot : undefined),
+          attempt, profile: metadata?.profile || previous.profile,
+          domSnapshot: metadata?.domSnapshot || (attempt === (previous.attempt || 1) ? previous.domSnapshot : undefined),
+          attemptHistory: history,
         };
 
         const hasFailed = updatedSteps.some((s) => s.status === "failed");
@@ -359,10 +402,10 @@ export const useFlowStore = create<AppState>((set) => ({
         ? { ...state.activeReplay, [field]: value }
         : null,
     })),
-  setReplayResponse: (response, status) =>
+  setReplayResponse: (response, status, error = null, requestId) =>
     set((state) => ({
-      activeReplay: state.activeReplay
-        ? { ...state.activeReplay, response, status, isLoading: false }
-        : null,
+      activeReplay: state.activeReplay && (!requestId || requestId === state.activeReplay.requestId)
+        ? { ...state.activeReplay, response, status, error, isLoading: false }
+        : state.activeReplay,
     })),
 }));

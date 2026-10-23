@@ -1,15 +1,15 @@
 # Dependencies
 node_modules/
 
-# Production Builds & Compiled Code
-dist/
-out/
-build/
-*.tsbuildinfo
+# # Production Builds & Compiled Code
+# dist/
+# out/
+# build/
+# *.tsbuildinfo
 
-# workspace_engine
-src/workspace_engine/target/
-**/target/
+# # workspace_engine
+# src/workspace_engine/target/
+# **/target/
 
 # Flowstride Specific Framework Artifacts
 .flowstride/
@@ -50,3 +50,21 @@ src/ui/dist/
 .Trashes
 ehthumbs.db
 Thumbs.db
+# Generated release/build outputs
+dist/
+out/
+build/
+**/target/
+src/workspace_engine/pkg/
+*.tsbuildinfo
+.env.*
+
+.flowstride-*/
+package-inventory.json
+development-audit.json
+
+*.tgz
+
+flowstride-artifacts/
+
+runtime-audit.json

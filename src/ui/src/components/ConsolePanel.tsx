@@ -1,8 +1,10 @@
+import { logsForFile } from '../utils/flowHistory';
 import { useEffect, useRef } from "react";
 import { useFlowStore } from "../store";
 
 export const ConsolePanel = () => {
-  const { logs } = useFlowStore();
+  const { logs: allLogs, activeTestFile } = useFlowStore();
+  const logs = logsForFile(allLogs, activeTestFile);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

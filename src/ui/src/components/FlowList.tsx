@@ -47,16 +47,8 @@ export const FlowList = () => {
   }, [activeStepId, activeTestFile]);
 
   useEffect(() => {
-    if (isRunning) {
-      const runningFile = testScenarios.find((s) =>
-        s.steps.some((step) => step.status === "running"),
-      )?.fileName;
-
-      if (runningFile && runningFile !== expandedFile) {
-        setExpandedFile(runningFile);
-      }
-    }
-  }, [testScenarios, isRunning, expandedFile]);
+    if (activeTestFile) setExpandedFile(activeTestFile);
+  }, [activeTestFile]);
 
   const total = fileList.length;
   let passed = 0;
@@ -465,6 +457,8 @@ export const FlowList = () => {
                                         `${fileName}:::${step.id}`,
                                       )
                                     }
+                                    data-flow-file={fileName}
+                                    data-step-id={step.id}
                                     data-active-step={
                                       isCurrentTravelTarget ? "true" : "false"
                                     }

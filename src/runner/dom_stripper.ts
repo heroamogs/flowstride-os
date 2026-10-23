@@ -50,6 +50,10 @@ export class DOMStripper {
           }
         });
 
+        clone.querySelectorAll('input').forEach(input => input.removeAttribute('value'));
+        clone.querySelectorAll('textarea').forEach(input => { input.textContent = '[REDACTED]'; });
+        clone.querySelectorAll('[contenteditable]').forEach(input => { input.textContent = '[REDACTED]'; });
+
         let rawHtml = clone.outerHTML;
 
         rawHtml = rawHtml.replace(/[\n\r\t]+/g, " ");

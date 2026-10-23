@@ -1,3 +1,7 @@
+import { projectPath, artifactPrefix } from '../utils/projectPaths';
+import { withDeadline } from '../ci/deadline';
+import fs from 'node:fs';
+import { GameSDK } from '../game/sdk';
 import * as path from "path";
 import { FlowstrideConfig, FlowstrideSDK, PluginAction } from "../types";
 import { ApiProxy } from "../sdk/api_proxy";
@@ -8,6 +12,7 @@ import { WebAdapter } from "../adapters/web/playwright";
 export class PluginManager {
   private apiProxy: ApiProxy;
   private dbProxy: DbProxy;
+  private game: GameSDK;
 
   constructor(
     private config: FlowstrideConfig,
@@ -17,6 +22,7 @@ export class PluginManager {
   ) {
     this.apiProxy = apiProxy;
     this.dbProxy = new DbProxy();
+    this.game = new GameSDK(() => this.web.getPage(), this.config);
   }
 
   public async execute(
@@ -34,6 +40,15 @@ export class PluginManager {
     const pluginFile = actionName.substring(0, lastDotIndex);
     const functionName = actionName.substring(lastDotIndex + 1);
 
+    if (pluginFile === 'flowstride:game') {
+      const actions = ['tap','drag','swipe','key','checkpoint','snapshot','expectVisual','state','expectState','snapshotState','expectPreserved','fixture','select'];
+      if (!actions.includes(functionName)) throw new Error(`Unknown native game action: ${functionName}`);
+      const operation = (this.game as any)[functionName](args);
+      const result = this.config.ci ? await withDeadline(operation, this.config.timeout) : await operation;
+      if (saveAs) this.store.set(saveAs, result);
+      return result;
+    }
+
     let fullPath: string;
 
     if (pluginFile.includes("/") || pluginFile.includes("\\")) {
@@ -44,6 +59,7 @@ export class PluginManager {
       fullPath = path.resolve(pluginsPath, `${pluginFile}.ts`);
     }
 
+    fullPath = projectPath(process.cwd(), fullPath);
     try {
       let module: any;
 
@@ -70,6 +86,16 @@ export class PluginManager {
       }
 
       const sdk: FlowstrideSDK = {
+        game: this.game,
+        browser: { page: () => this.web.getPage() },
+        run: { device: this.config.device || 'desktop', artifactsDir: this.config.artifactsDir || path.resolve('flowstride-artifacts'),
+          attach: (name: string, data: string | Buffer) => {
+            if (!/^[a-zA-Z0-9_.-]+$/.test(name) || name === '.' || name === '..') throw new Error('Attachment name must be a simple filename.');
+            const directory = this.config.artifactsDir || path.resolve('flowstride-artifacts');
+            fs.mkdirSync(directory, { recursive: true });
+            const prefix = artifactPrefix(this.config.testFile);
+            const file = path.join(directory, prefix+name); fs.writeFileSync(file, data); return file;
+          } },
         api: {
           get: (url: string, headers?: Record<string, string>) =>
             this.apiProxy.get(url, headers),
@@ -151,7 +177,8 @@ export class PluginManager {
         },
       };
 
-      const result = await action(sdk, args);
+      const operation = action(sdk, args);
+      const result = this.config.ci ? await withDeadline(operation, this.config.timeout) : await operation;
 
       if (saveAs) {
         this.store.set(saveAs, result);

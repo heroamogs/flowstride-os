@@ -40,7 +40,7 @@ export class SessionManager {
     this.vault.save(`session_${name}`, data);
     this.activeSession = data;
 
-    await this.web.injectStorage(data.cookies, data.localStorage);
+    await this.web.injectStorage(data.cookies, data.localStorage, undefined, data.sessionStorage, data.storageOrigin);
 
     const definition = this.definitions.get(name);
     if (definition?.inject?.api) {
@@ -72,6 +72,8 @@ export class SessionManager {
       tokens: this.activeSession?.tokens || {},
       cookies: state.cookies,
       localStorage: state.localStorage,
+      sessionStorage: state.sessionStorage,
+      storageOrigin: state.storageOrigin,
       createdAt: Date.now(),
       lastUsedAt: Date.now(),
       persist,

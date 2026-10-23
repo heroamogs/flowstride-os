@@ -255,8 +255,12 @@ export const LogsView = () => {
     updateReplay("isLoading", true);
     updateReplay("response", null);
     updateReplay("status", null);
+    updateReplay('error', null);
+    const requestId = crypto.randomUUID();
+    updateReplay('requestId', requestId);
 
     sendToRunner("REPLAY_REQ", {
+      requestId,
       method: activeReplay.method,
       url: activeReplay.url,
       headers: activeReplay.headers,
@@ -398,7 +402,9 @@ export const LogsView = () => {
         return (
           <div style={{ position: "relative" }}>
             <button
-              onClick={() => copyToClipboard(details.curlString)}
+              onClick={() => copyToClipboard(details.rawCurlString || details.curlString)}
+              disabled={!details.rawCurlString && details.curlString === '[REDACTED]'}
+              title={!details.rawCurlString && details.curlString === '[REDACTED]' ? 'This command was redacted. Rerun the flow locally to capture a new command.' : 'Copy the original local request, including its headers and body.'}
               style={{
                 position: "absolute",
                 top: "10px",
@@ -430,7 +436,7 @@ export const LogsView = () => {
                 </>
               ) : (
                 <>
-                  <Copy size={12} /> Copy
+                  <Copy size={12} /> Copy raw cURL
                 </>
               )}
             </button>
@@ -438,7 +444,7 @@ export const LogsView = () => {
               style={{
                 background: "#05070a",
                 padding: "20px 15px",
-                paddingRight: "90px", // Prevent text overlapping the button
+                paddingRight: "160px", // Prevent text overlapping the button
                 borderRadius: "8px",
                 border: "1px solid #30363d",
                 color: "#a5d6ff",
@@ -586,7 +592,7 @@ export const LogsView = () => {
               </div>
             </div>
 
-            {activeReplay.status && (
+            {(activeReplay.status !== null || activeReplay.error) && (
               <div
                 style={{
                   marginTop: "10px",
@@ -609,23 +615,23 @@ export const LogsView = () => {
                       fontWeight: "bold",
                     }}
                   >
-                    LIVE RESPONSE:
+                    {activeReplay.error ? 'REPLAY ERROR:' : 'LIVE RESPONSE:'}
                   </span>
                   <span
                     style={{
                       backgroundColor:
-                        activeReplay.status < 400
+                        activeReplay.status !== null && activeReplay.status < 400
                           ? "rgba(52, 211, 153, 0.1)"
                           : "rgba(248, 113, 113, 0.1)",
-                      color: activeReplay.status < 400 ? "#34d399" : "#f87171",
-                      border: `1px solid ${activeReplay.status < 400 ? "rgba(52, 211, 153, 0.2)" : "rgba(248, 113, 113, 0.2)"}`,
+                      color: activeReplay.status !== null && activeReplay.status < 400 ? "#34d399" : "#f87171",
+                      border: `1px solid ${activeReplay.status !== null && activeReplay.status < 400 ? "rgba(52, 211, 153, 0.2)" : "rgba(248, 113, 113, 0.2)"}`,
                       fontSize: "10px",
                       padding: "2px 6px",
                       borderRadius: "4px",
                       fontWeight: "bold",
                     }}
                   >
-                    {activeReplay.status}
+                    {activeReplay.error ? 'Request error' : activeReplay.status}
                   </span>
                 </div>
                 <div

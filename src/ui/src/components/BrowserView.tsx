@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useState } from 'react';
+import { flowStep, lastCapturedStep } from '../utils/flowHistory';
 import {
   ChevronLeft,
   ChevronRight,
@@ -27,44 +28,18 @@ export const BrowserView = () => {
     setActiveTestFile,
   } = useFlowStore();
 
-  useEffect(() => {
-    if (isRunning) {
-      const runningScenario = testScenarios.find((s) =>
-        s.steps.some((step) => step.status === "running"),
-      );
-
-      if (runningScenario && runningScenario.fileName !== activeTestFile) {
-        setActiveTestFile(runningScenario.fileName);
-      }
-    }
-  }, [testScenarios, isRunning, activeTestFile, setActiveTestFile]);
-
-  let targetFileName: string | null = isRunning ? activeTestFile : null;
-  let targetStepId: string | null = activeStepId;
-
-  if (activeStepId && activeStepId.includes(":::")) {
-    const parts = activeStepId.split(":::");
-    targetFileName = parts[0];
-    targetStepId = parts[1];
-  }
-
-  const selectedStep = testScenarios
-    .filter(
-      (scenario) => !targetFileName || scenario.fileName === targetFileName,
-    )
-    .flatMap((scenario) => scenario.steps)
-    .find((step) => step.id === targetStepId);
-
-  const hasHistoricalSnapshot =
-    !isRunning && !!(selectedStep && selectedStep.screenshot);
+  const selectedStep = flowStep(testScenarios, activeTestFile, activeStepId);
+  const [historyAttempt, setHistoryAttempt] = useState<number | null>(null);
+  useEffect(() => { setHistoryAttempt(null); }, [activeTestFile, activeStepId, isRunning]);
+  const selectedEvidence = selectedStep?.attemptHistory?.find(item => item.attempt === (historyAttempt || selectedStep.attempt)) || selectedStep;
+  const hasHistoricalSnapshot = !isRunning && !!selectedEvidence?.screenshot;
 
   const activeUrl = currentUrls[activeTestFile] || "about:blank";
   const activeTitle = pageTitles[activeTestFile] || "New Tab";
   const activeFrame = browserFrames[activeTestFile] || null;
 
-  const visualSource = hasHistoricalSnapshot
-    ? selectedStep.screenshot
-    : activeFrame;
+  const visualSource = !isRunning && selectedStep ? selectedEvidence?.screenshot
+    : activeFrame || (!isRunning ? lastCapturedStep(testScenarios, activeTestFile)?.screenshot : null);
 
   const uniqueFiles = Array.from(new Set(testScenarios.map((s) => s.fileName)));
 
@@ -99,11 +74,16 @@ export const BrowserView = () => {
         </style>
 
         {uniqueFiles.length > 0 ? (
-          uniqueFiles.map((file, idx) => {
+          uniqueFiles.map((file) => {
             const isActive = activeTestFile === file;
             return (
               <div
-                key={idx}
+                key={file}
+                role="tab"
+                aria-selected={isActive}
+                aria-label={file}
+                tabIndex={0}
+                onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setActiveTestFile(file); } }}
                 onClick={() => setActiveTestFile(file)}
                 style={{
                   backgroundColor: isActive
@@ -290,6 +270,11 @@ export const BrowserView = () => {
                   }}
                 >
                   {selectedStep?.command}
+                  {selectedEvidence?.profile && <span> · Profile: {selectedEvidence.profile}</span>}
+                  {(selectedStep?.attemptHistory?.length || 0) > 1 && <select aria-label="History attempt" value={historyAttempt || selectedStep?.attempt || 1} onChange={event => setHistoryAttempt(Number(event.target.value))} style={{ marginLeft: 10, color: 'white', background: '#1e293b' }}>
+                    {selectedStep!.attemptHistory!.map(item => <option key={item.attempt} value={item.attempt}>Attempt {item.attempt} · {item.status}</option>)}
+                  </select>}
+                  {selectedEvidence?.domSnapshot && <a href={`/evidence?file=${encodeURIComponent(selectedEvidence.domSnapshot)}`} target="_blank" rel="noopener noreferrer" style={{ marginLeft:10, color:'#c4b5fd' }}>Read DOM snapshot</a>}
                 </div>
               </div>
             </div>
@@ -333,7 +318,7 @@ export const BrowserView = () => {
           <div style={{ textAlign: "center", color: "#ccc" }}>
             <Globe size={40} style={{ marginBottom: "8px", opacity: 0.1 }} />
             <div style={{ fontSize: "11px", fontWeight: 500, opacity: 0.3 }}>
-              WAITING FOR RENDER...
+              {isRunning ? 'WAITING FOR RENDER...' : selectedStep ? 'No captured screen for this step.' : 'No browser screen captured for this test.'}
             </div>
           </div>
         )}

@@ -18,6 +18,7 @@ export const Header = ({ isRightPanelOpen, onToggleRightPanel }: any) => {
     stopExecution,
     incrementTimer,
     activeTestFile,
+    browserInfo,
   } = useFlowStore();
 
   useEffect(() => {
@@ -84,6 +85,13 @@ export const Header = ({ isRightPanelOpen, onToggleRightPanel }: any) => {
           <span style={{ color: "white" }}>{activeTestFile}</span>
         </div>
 
+        {browserInfo[activeTestFile] && (
+          <span data-testid="test-browser" title={`Verified engine: ${browserInfo[activeTestFile].engine} ${browserInfo[activeTestFile].version}`} style={{ color: '#a78bfa', fontSize: '12px' }}>
+            Test browser: {({ chromium: 'Chromium', firefox: 'Firefox', webkit: 'WebKit' } as Record<string, string>)[browserInfo[activeTestFile].engine] || browserInfo[activeTestFile].engine}
+            {' · '}{browserInfo[activeTestFile].headless ? 'Headless' : 'Headed'}
+          </span>
+        )}
+
         {(isRunning || timer > 0) && (
           <div
             style={{
@@ -134,6 +142,7 @@ export const Header = ({ isRightPanelOpen, onToggleRightPanel }: any) => {
 
       <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
         <button
+          aria-label="Toggle execution details"
           onClick={onToggleRightPanel}
           style={{
             background: "none",

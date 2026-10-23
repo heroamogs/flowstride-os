@@ -1,3 +1,4 @@
+import { projectPath } from '../utils/projectPaths';
 import * as fs from "fs";
 import * as path from "path";
 
@@ -6,7 +7,7 @@ export class PersistentVault {
   public data: Record<string, any> = {};
 
   constructor(projectRoot: string = process.cwd()) {
-    this.vaultPath = path.join(projectRoot, ".flowstride", "vault.json");
+    this.vaultPath = projectPath(projectRoot, path.join(projectRoot, ".flowstride", "vault.json"));
     this.initialiseVault();
   }
 

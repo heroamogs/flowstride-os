@@ -1,4 +1,33 @@
 export interface FlowstrideConfig {
+  browser?: 'chromium' | 'firefox' | 'webkit';
+  browserOptions?: import('playwright').BrowserContextOptions;
+  retries?: number;
+  failOnFlaky?: boolean;
+  trace?: boolean;
+  har?: boolean;
+  domSnapshots?: boolean;
+  shard?: string;
+  shardHistory?: string;
+  updateBaselines?: boolean;
+
+  ci?: boolean;
+  flowRoot?: string;
+  projectRoot?: string;
+  cloudSyncResult?: { reporting: string; video: string; error?: unknown };
+  device?: 'desktop' | 'phone' | 'landscape';
+  viewport?: { width: number; height: number };
+  testDir?: string;
+  artifactsDir?: string;
+  recordVideo?: boolean;
+  browserErrors?: 'fail' | 'record';
+  webServer?: { command: string; url: string; cwd?: string; timeout?: number };
+  testFile?: string;
+  onRunEvent?: (event: any) => void;
+  bail?: boolean;
+  isCloudSyncActive?: boolean;
+  machineToken?: string | null;
+  workspaceId?: string | null;
+  manifest?: { plan?: string; maxWorkers?: number | 'unlimited'; [key: string]: any } | null;
   baseUrl?: string;
   timeout: number;
   headless: boolean;
@@ -20,6 +49,8 @@ export interface SessionData {
   tokens: Record<string, any>;
   cookies?: any[];
   localStorage?: Record<string, string>;
+  sessionStorage?: Record<string, string>;
+  storageOrigin?: string;
   createdAt: number;
   lastUsedAt: number;
   persist: boolean;
@@ -45,6 +76,10 @@ export interface SessionDefinition {
 }
 
 export interface FlowstrideSDK {
+  game: import('../game/sdk').GameSDK;
+  browser: { page: () => import('playwright').Page };
+  run: { device: string; artifactsDir: string; attach: (name: string, data: string | Buffer) => string };
+
   api: {
     get: (url: string, headers?: Record<string, string>) => Promise<any>;
     post: (url: string, body: any, headers?: Record<string, string>) => Promise<any>;

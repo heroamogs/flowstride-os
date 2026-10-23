@@ -1,3 +1,8 @@
+import { NativeRuntime } from '../native/runtime';
+import { withDeadline } from '../ci/deadline';
+import { buildReplayRequest, ReplayRequestError } from '../utils/replayRequest';
+import { flowIdentity, videoFileName, projectPath } from '../utils/projectPaths';
+import { redactWorkerPayload, redactText } from '../security/redaction';
 import * as fs from "fs";
 import * as path from "path";
 import chalk from "chalk";
@@ -32,9 +37,16 @@ export interface SmartSelectorToken {
 }
 
 export class FlowWorker extends EventEmitter {
+  public static readonly nativeBrowserProtocol = 2;
   private isSilent = process.env.FLOWSTRIDE_PARALLEL === "true";
   private isAborted = false;
+  private bailTriggered = false;
   private isDebugHalted = false;
+  private native: NativeRuntime;
+  private attempt = 1;
+  private maxAttempts = 1;
+  private fallbackStream?: NodeJS.Timeout;
+  private interceptedContexts = new WeakSet<object>();
 
   private currentStepContext: string = "Initializing...";
   private currentFileName: string = "System";
@@ -60,10 +72,14 @@ export class FlowWorker extends EventEmitter {
     private pluginManager?: PluginManager,
   ) {
     super();
+    this.native = new NativeRuntime(web, config);
+    this.web.onPageChanged = async () => { await this.startStreaming(); await this.setupNetworkInterception(); };
   }
 
   private broadcast(type: string, payload: any) {
-    this.emit("worker_event", { type, payload });
+    if (["STEP_ADD","STEP_UPDATE","LOG_EVENT"].includes(type)) payload = { ...payload, attempt: this.attempt, profile: this.web.activeProfile || "default" };
+    const secrets = [this.config.machineToken || '', ...(this.dataGen?.sensitiveValues?.() || []), ...Object.entries(process.env).filter(([key]) => /password|token|secret|api.?key/i.test(key)).map(([,value]) => String(value)), ...Object.entries(this.localVariables).filter(([key]) => /password|passcode|token|secret|otp|api.?key/i.test(key)).map(([,value]) => String(value))];
+    this.emit('worker_event', { type, payload: redactWorkerPayload(type, payload, secrets, this.config.ci === false) });
   }
 
   private emitLog(
@@ -304,6 +320,7 @@ export class FlowWorker extends EventEmitter {
         url: cleanUrl,
         requestHeaders: formattedHeaders,
         requestBody: parsedReqBody,
+        rawReplayRequest: { method: method.toUpperCase(), url: cleanUrl, headers: formattedHeaders, body: rawBodyString },
         responseStatus: state.status,
         responseHeaders: state.headers,
         responseBody: state.body,
@@ -331,51 +348,25 @@ export class FlowWorker extends EventEmitter {
   }
 
   public async handleReplayRequest(payload: any) {
+    const requestId = typeof payload?.requestId === 'string' ? payload.requestId : undefined;
     try {
-      let parsedHeaders = undefined;
-      let parsedBody = undefined;
-      try {
-        if (payload.headers) parsedHeaders = JSON.parse(payload.headers);
-      } catch (e) {}
-      try {
-        if (payload.body) parsedBody = JSON.parse(payload.body);
-      } catch (e) {
-        parsedBody = payload.body;
-      }
-
-      const fetchOptions: any = {
-        method: payload.method,
-        headers: parsedHeaders,
-      };
-
-      if (parsedBody && payload.method !== "GET" && payload.method !== "HEAD") {
-        fetchOptions.body =
-          typeof parsedBody === "string"
-            ? parsedBody
-            : JSON.stringify(parsedBody);
-      }
-
-      const response = await fetch(payload.url, fetchOptions);
-      const status = response.status;
+      const { url, options } = buildReplayRequest(payload);
+      options.signal = AbortSignal.timeout(this.config.timeout || 30000);
+      const response = await fetch(url, options);
       const text = await response.text();
-
       let responseBody;
-      try {
-        responseBody = JSON.parse(text);
-      } catch {
-        responseBody = text;
-      }
-
-      this.broadcast("REPLAY_RES", {
-        status,
-        responseBody,
+      try { responseBody = JSON.parse(text); } catch { responseBody = text; }
+      this.broadcast('REPLAY_RES', {
+        status: response.status, responseBody, error: null, requestId,
         fileName: this.currentFileName,
       });
     } catch (error: any) {
-      this.broadcast("REPLAY_RES", {
-        status: 500,
-        responseBody: { error: error.message },
-        fileName: this.currentFileName,
+      const code = error instanceof ReplayRequestError ? 'REPLAY_INVALID_REQUEST'
+        : error?.name === 'TimeoutError' ? 'REPLAY_TIMEOUT' : 'REPLAY_NETWORK_ERROR';
+      const message = redactText(String(error?.message || 'Replay request failed'), [this.config.machineToken || '']);
+      this.broadcast('REPLAY_RES', {
+        status: null, error: code, requestId,
+        responseBody: { error: message, code }, fileName: this.currentFileName,
       });
     }
   }
@@ -395,9 +386,11 @@ export class FlowWorker extends EventEmitter {
 
     this.activeAudioPath = undefined;
     this.isAborted = false;
+    this.bailTriggered = false;
     this.isDebugHalted = false;
 
     const sigintHandler = async () => {
+      if (this.config.ci) { this.abort(); return; }
       if (!this.isSilent) {
         console.log(
           chalk.yellow(
@@ -410,7 +403,7 @@ export class FlowWorker extends EventEmitter {
       try {
         await this.web.shutdown();
       } catch (e) {}
-      process.exit(0);
+      if (!this.config.ci) process.exit(0);
     };
 
     process.once("SIGINT", sigintHandler);
@@ -423,7 +416,7 @@ export class FlowWorker extends EventEmitter {
         );
         if (audioMatch && audioMatch[1]) {
           const rawPath = audioMatch[1];
-          const absolutePath = path.resolve(process.cwd(), rawPath);
+          const absolutePath = projectPath(process.cwd(), rawPath);
           if (!fs.existsSync(absolutePath)) {
             throw new Error(
               `Pre-launch initialization failed: Audio file not found at ${absolutePath}`,
@@ -435,19 +428,26 @@ export class FlowWorker extends EventEmitter {
       }
 
       for (const filePath of filesToProcess) {
-        if (this.isAborted || this.isDebugHalted) break;
+        if (this.isAborted || this.isDebugHalted || this.bailTriggered) break;
 
         const fileStartTime = Date.now();
         try {
-          const fileName = path.basename(filePath);
+          const fileName = flowIdentity(filePath, this.config.flowRoot);
           this.currentFileName = fileName;
+          this.config.testFile = fileName;
 
           this.localVariables = {};
           this.localBrowserSessions = {};
           this.api.resetState();
           this.dataGen = new DataGenerators();
 
+          await this.native.dispose();
           await this.web.initialise(this.activeAudioPath);
+          if (typeof this.web.getBrowserInfo === 'function') {
+            const browser = this.web.getBrowserInfo();
+            console.log(`[Browser]: ${browser.engine} ${browser.version}; ${browser.headless ? 'headless' : 'headed'}; ${fileName}`);
+            this.broadcast('BROWSER_INFO', { ...browser, fileName });
+          }
           await this.startStreaming();
           await this.setupNetworkInterception();
 
@@ -504,13 +504,13 @@ export class FlowWorker extends EventEmitter {
           }
 
           for (const f of features) {
-            if (this.isAborted || this.isDebugHalted) break;
+            if (this.isAborted || this.isDebugHalted || this.bailTriggered) break;
             if (f.scenarios.length === 0) continue;
 
             if (!this.isSilent)
               console.log(chalk.magenta.bold(`  Feature: ${f.name}`));
             for (const s of f.scenarios) {
-              if (this.isAborted || this.isDebugHalted) break;
+              if (this.isAborted || this.isDebugHalted || this.bailTriggered) break;
 
               if (!this.isSilent)
                 console.log(chalk.cyan(`    Scenario: ${s.name}`));
@@ -520,9 +520,9 @@ export class FlowWorker extends EventEmitter {
                 fileName: this.currentFileName,
               });
 
-              await this.runScenario(s, f.declarations);
+              await this.runScenarioWithRetries(s, f.declarations);
 
-              if (this.isDebugHalted) break;
+              if (this.isDebugHalted || this.bailTriggered) break;
 
               await this.web
                 .getPage()
@@ -532,7 +532,7 @@ export class FlowWorker extends EventEmitter {
                 .getPage()
                 .waitForLoadState("networkidle", { timeout: 4000 })
                 .catch(() => {});
-              await new Promise((resolve) => setTimeout(resolve, 2000));
+              if (!this.config.ci) await new Promise((resolve) => setTimeout(resolve, 2000));
             }
           }
 
@@ -542,10 +542,10 @@ export class FlowWorker extends EventEmitter {
             console.log(
               chalk.gray("\n[Execution]: Finalizing browser actions..."),
             );
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+          if (!this.config.ci) await new Promise((resolve) => setTimeout(resolve, 2000));
 
           try {
-            const baseName = this.currentFileName.replace(".flow", "");
+            const baseName = videoFileName(this.currentFileName).replace(/\.webm$/, '');
             const mockCloudDir = path.join(
               process.cwd(),
               ".flowstride",
@@ -556,6 +556,8 @@ export class FlowWorker extends EventEmitter {
 
             const targetVideoPath = path.join(mockCloudDir, `${baseName}.webm`);
 
+            for (const message of this.web.pageErrors || []) this.broadcast('BROWSER_ERROR', { message, fileName: this.currentFileName });
+            await this.native.dispose();
             await this.web.shutdown(targetVideoPath);
             if (!this.isSilent)
               console.log(
@@ -580,7 +582,7 @@ export class FlowWorker extends EventEmitter {
             );
 
           try {
-            const baseName = this.currentFileName.replace(".flow", "");
+            const baseName = videoFileName(this.currentFileName).replace(/\.webm$/, '');
             const mockCloudDir = path.join(
               process.cwd(),
               ".flowstride",
@@ -591,6 +593,8 @@ export class FlowWorker extends EventEmitter {
 
             const targetVideoPath = path.join(mockCloudDir, `${baseName}.webm`);
 
+            for (const message of this.web.pageErrors || []) this.broadcast('BROWSER_ERROR', { message, fileName: this.currentFileName });
+            await this.native.dispose();
             await this.web.shutdown(targetVideoPath);
             if (!this.isSilent)
               console.log(
@@ -608,7 +612,7 @@ export class FlowWorker extends EventEmitter {
         }
       }
 
-      if (!this.isSilent && !this.isAborted) {
+      if (!this.config.ci && !this.isSilent && !this.isAborted) {
         if (this.isDebugHalted) {
           console.log(
             chalk.cyan("\n[Execution]: Test suite halted by debug flag."),
@@ -620,15 +624,54 @@ export class FlowWorker extends EventEmitter {
         }
       }
     } finally {
+      if (this.config.ci && this.isAborted) {
+        try {
+          const directory = path.join(process.cwd(), '.flowstride', 'artifacts');
+          fs.mkdirSync(directory, { recursive: true });
+          await this.native.dispose();
+          await this.web.shutdown(path.join(directory, videoFileName(this.currentFileName)));
+        } catch (error: any) { this.broadcast('WORKER_ERROR', { message: error.message }); }
+      }
       process.removeListener("SIGINT", sigintHandler);
     }
+  }
+
+  private async runScenarioWithRetries(scenario: ScenarioNode, declarations: DeclarationNode[]) {
+    this.maxAttempts = (this.config.retries || 0) + 1;
+    const baseline = this.maxAttempts > 1 ? await this.web.checkpointProfiles() : undefined;
+    const variables = this.maxAttempts > 1 ? structuredClone(this.localVariables) : {}, sessions = this.maxAttempts > 1 ? structuredClone(this.localBrowserSessions) : {};
+    const globals = this.maxAttempts > 1 ? structuredClone(FlowWorker.globalVariables) : {}, globalSessions = this.maxAttempts > 1 ? structuredClone(FlowWorker.globalBrowserSessions) : {};
+    const storeState = this.maxAttempts > 1 ? structuredClone(this.store.getAll?.()) : undefined;
+    const apiState = this.maxAttempts > 1 ? this.api.checkpointState?.() : undefined;
+    for (this.attempt = 1; this.attempt <= this.maxAttempts; this.attempt++) {
+      if (this.isAborted || this.isDebugHalted) break;
+      if (this.attempt > 1) {
+        await this.native.dispose(); if (apiState) this.api.restoreState(apiState); else this.api.resetState();
+        this.localVariables = structuredClone(variables); this.localBrowserSessions = structuredClone(sessions);
+        FlowWorker.globalVariables = structuredClone(globals); FlowWorker.globalBrowserSessions = structuredClone(globalSessions);
+        if (storeState) { this.store.clear(); for (const [key,value] of Object.entries(structuredClone(storeState))) this.store.set(key,value); }
+        await this.web.restoreProfiles(baseline);
+      }
+      const started = Date.now();
+      this.broadcast('SCENARIO_ATTEMPT', { fileName: this.currentFileName, scenario: scenario.name, attempt: this.attempt });
+      const errorIndex = this.web.pageErrors?.length || 0;
+      const completed = await this.runScenario(structuredClone(scenario), declarations);
+      const browserErrors = this.web.pageErrors?.slice(errorIndex) || [];
+      const passed = completed && (this.config.browserErrors === 'record' || !browserErrors.length);
+      this.broadcast('SCENARIO_RESULT', { fileName: this.currentFileName, scenario: scenario.name, attempt: this.attempt, status: this.isAborted ? 'interrupted' : passed ? 'passed' : 'failed', flaky: passed && this.attempt > 1, browserErrors, duration: Date.now() - started });
+      if (passed || this.isAborted || this.isDebugHalted) break;
+      if (this.attempt < this.maxAttempts) this.web.pageErrors?.splice(errorIndex);
+    }
+    this.attempt = 1; this.maxAttempts = 1;
   }
 
   private async runScenario(
     scenario: ScenarioNode,
     globalDeclarations: DeclarationNode[] = [],
   ) {
-    for (const step of scenario.steps) {
+    let hasScenarioFailed = false;
+    for (const originalStep of scenario.steps) {
+      const step = structuredClone(originalStep);
       if (this.isAborted) break;
 
       const blockName = step.blockDescription.split(" ")[0];
@@ -642,6 +685,12 @@ export class FlowWorker extends EventEmitter {
       this.currentStepContext = `${blockName} ${blockDesc}`;
 
       const isOpt = step.payload?.optional;
+      if (hasScenarioFailed) {
+        this.broadcast('STEP_ADD', { id: step.id, type: blockName, description: blockDesc, command: step.action, status: 'not_tested', fileName: this.currentFileName });
+        this.broadcast('STEP_UPDATE', { id: step.id, status: 'not_tested', fileName: this.currentFileName });
+        continue;
+      }
+
 
       const mockSpinner = {
         text: "",
@@ -699,11 +748,13 @@ export class FlowWorker extends EventEmitter {
         );
 
         const stepContext = await this.captureStepContext(step.payload);
+        const domSnapshot = await this.native.captureDOM(step.id).catch(() => undefined);
         spinner.succeed();
         this.broadcast("STEP_UPDATE", {
           id: step.id,
           status: "passed",
           screenshot: stepContext.screenshot,
+          domSnapshot,
           fileName: this.currentFileName,
         });
 
@@ -722,6 +773,7 @@ export class FlowWorker extends EventEmitter {
         if (this.isAborted) break;
 
         const stepContext = await this.captureStepContext(step.payload);
+        const domSnapshot = await this.native.captureDOM(step.id).catch(() => undefined);
 
         let strippedDom = "";
         try {
@@ -755,6 +807,7 @@ export class FlowWorker extends EventEmitter {
             id: step.id,
             status: "skipped",
             screenshot: stepContext.screenshot,
+            domSnapshot,
             fileName: this.currentFileName,
           });
           continue;
@@ -829,11 +882,17 @@ export class FlowWorker extends EventEmitter {
           id: step.id,
           status: "failed",
           screenshot: stepContext.screenshot,
+          domSnapshot,
           fileName: this.currentFileName,
         });
-        throw e;
+        hasScenarioFailed = true;
+        if (this.config.bail && this.attempt >= this.maxAttempts && !this.bailTriggered) {
+          this.bailTriggered = true;
+          this.broadcast('BAIL', { fileName: this.currentFileName, id: step.id });
+        }
       }
     }
+    return !hasScenarioFailed;
   }
 
   private async waitForPipeline(): Promise<void> {
@@ -909,6 +968,11 @@ export class FlowWorker extends EventEmitter {
     }
 
     switch (action) {
+      case 'native': {
+        const result = await withDeadline(this.native.execute(payload.pluginMethod, payload.data), this.config.timeout);
+        if (payload.saveAs) this.localVariables[payload.saveAs] = result;
+        break;
+      }
       case "extract":
         if (["resBody", "resHeader", "cookie"].includes(payload.target)) {
           this.processExtractions([
@@ -1080,6 +1144,7 @@ export class FlowWorker extends EventEmitter {
             localStorage: stateToSave.localStorage || {},
             sessionStorage: (stateToSave as any).sessionStorage || {},
             fallbackDomain,
+            storageOrigin: stateToSave.storageOrigin,
           };
 
           if (payload.isGlobal) {
@@ -1156,6 +1221,8 @@ export class FlowWorker extends EventEmitter {
             loadedState.cookies,
             loadedState.localStorage,
             loadedState.fallbackDomain,
+            loadedState.sessionStorage,
+            loadedState.storageOrigin,
           );
         }
         break;
@@ -1491,6 +1558,25 @@ export class FlowWorker extends EventEmitter {
             payload.text,
             payload.elementType,
           );
+        else if (expectType === "attribute") {
+          const deadline = Date.now() + this.config.timeout;
+          let actual: string | null = null;
+          const failure = () => `Attribute assertion failed: ${payload.attribute} on ${payload.selector}. Expected ${payload.fuzzy ? 'to contain ' : ''}${JSON.stringify(payload.text)}, received ${JSON.stringify(actual)}.`;
+          while (true) {
+            const remaining = deadline - Date.now();
+            if (remaining <= 0) throw new Error(failure());
+            try {
+              actual = await withDeadline(
+                this.web.getAttribute(payload.selector, payload.attribute, payload.elementType), remaining,
+              );
+            } catch (error) {
+              throw new Error(`${failure()}\n${error instanceof Error ? error.message : String(error)}`, { cause: error });
+            }
+            if (actual !== null && (payload.fuzzy ? actual.includes(payload.text) : actual === payload.text)) break;
+            if (Date.now() >= deadline) throw new Error(failure());
+            await new Promise(resolve => setTimeout(resolve, Math.max(0, Math.min(50, deadline - Date.now()))));
+          }
+        }
         else if (expectType === "transcript")
           await this.web.expectTranscript(payload.text);
         break;
@@ -1499,6 +1585,8 @@ export class FlowWorker extends EventEmitter {
 
   private async setupNetworkInterception() {
     const context = this.web.getPage().context();
+    if (this.interceptedContexts.has(context)) return;
+    this.interceptedContexts.add(context);
     context.on("response", async (response) => {
       const lockedFileName = this.currentFileName;
       const request = response.request();
@@ -1526,10 +1614,11 @@ export class FlowWorker extends EventEmitter {
       const urlObj = new URL(request.url());
       const endpointName = urlObj.pathname.split("/").pop() || urlObj.pathname;
 
+      const requestHeaders = await request.allHeaders().catch(() => request.headers());
       const curlString = this.web.synthesizeCurl(
         request.method(),
         request.url(),
-        request.headers(),
+        requestHeaders,
         rawPostData,
       );
 
@@ -1540,8 +1629,9 @@ export class FlowWorker extends EventEmitter {
         {
           method: request.method(),
           url: request.url(),
-          requestHeaders: request.headers(),
+          requestHeaders: requestHeaders,
           requestBody: requestBody,
+          rawReplayRequest: { method: request.method(), url: request.url(), headers: requestHeaders, body: rawPostData },
           responseStatus: response.status(),
           responseHeaders: response.headers(),
           responseBody: responseBody,
@@ -1570,6 +1660,16 @@ export class FlowWorker extends EventEmitter {
   }
 
   private async startStreaming() {
+    clearInterval(this.fallbackStream);
+    if (this.config.ci) return;
+    if (this.config.browser && this.config.browser !== 'chromium') {
+      const page = this.web.getPage(); let busy = false;
+      this.fallbackStream = setInterval(async () => {
+        if (busy || page.isClosed()) return; busy = true;
+        try { this.broadcast('BROWSER_FRAME', { base64: (await page.screenshot({ type:'jpeg', quality:60 })).toString('base64'), fileName:this.currentFileName }); } catch {} finally { busy = false; }
+      }, 250);
+      this.fallbackStream.unref(); return;
+    }
     const page = this.web.getPage();
     if (this.currentCdpSession) {
       await this.currentCdpSession.detach().catch(() => {});
@@ -1595,6 +1695,8 @@ export class FlowWorker extends EventEmitter {
   }
 
   public async shutdown(): Promise<void> {
+    clearInterval(this.fallbackStream);
+    await this.native.dispose();
     try {
       await this.web.shutdown();
     } catch (e) {}

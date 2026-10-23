@@ -1,13 +1,130 @@
+import { evidencePath, validateContextOptions, name as nativeName } from '../../native/validation';
+import { chromium as pinnedChromium, firefox, webkit } from 'playwright';
+import { projectPath } from '../../utils/projectPaths';
+import { devices } from 'playwright';
 import * as fs from "fs";
 import * as path from "path";
-import { chromium } from "playwright-extra";
+import { addExtra } from "playwright-extra";
 import stealthPlugin from "puppeteer-extra-plugin-stealth";
-import { Browser, BrowserContext, Page, Locator, Dialog } from "playwright";
+import { Browser, BrowserContext, Page, Locator, Dialog, Disposable, Frame } from "playwright";
 import { FlowstrideConfig } from "../../types";
 
+const chromium = addExtra(pinnedChromium);
 chromium.use(stealthPlugin());
 
 export class WebAdapter {
+
+  public activeProfile = 'default';
+  private profiles = new Map<string, { context: BrowserContext; page: Page; options: any; tracing: boolean; tracePath?: string; videoTarget?: string }>();
+  private contextOptions: any = {};
+  public onPageChanged?: () => Promise<void>;
+
+  public profileNames(): string[] { return [...this.profiles.keys()]; }
+  public getContext(): BrowserContext { if (!this.context) throw new Error('Browser not initialised'); return this.context; }
+
+  public async createProfile(profileName: string, options: unknown = {}): Promise<void> {
+    const key = nativeName.parse(profileName);
+    if (this.profiles.has(key)) throw new Error(`Browser profile already exists: ${key}`);
+    if (!this.browser) throw new Error('Browser not initialised');
+    const { storageState: _defaultAuthentication, ...inherited } = this.contextOptions;
+    const settings = { ...inherited, ...validateContextOptions(options, this.config.browser, this.config.projectRoot) };
+    if (this.config.har) settings.recordHar = { path: evidencePath(this.config, `${key}-${Date.now()}.har`), content: 'embed', mode: 'full' };
+    const context = await this.browser.newContext(settings);
+    context.setDefaultTimeout(this.config.timeout);
+    context.on('page', page => page.on('pageerror', error => this.pageErrors.push(error.message)));
+    context.on('dialog', async dialog => { if (this.dialogHandler) await this.dialogHandler(dialog); else if (this.config.defaultDialogBehavior === 'accept') await dialog.accept().catch(() => {}); else await dialog.dismiss().catch(() => {}); });
+    try {
+      const page = await context.newPage();
+      this.profiles.set(key, { context, page, options: settings, tracing: false });
+      if (this.config.trace) await this.beginTrace(key);
+      await this.useProfile(key);
+    } catch (error) { await context.close(); this.profiles.delete(key); throw error; }
+  }
+
+  public async useProfile(profileName: string): Promise<void> {
+    const profile = this.profiles.get(profileName);
+    if (!profile || profile.page.isClosed()) throw new Error(`Browser profile is not available: ${profileName}`);
+    const previous = this.profiles.get(this.activeProfile);
+    if (previous && this.page && !this.page.isClosed() && this.context === previous.context) previous.page = this.page;
+    // Initializers belong to their own page, even while another profile is active.
+    this.context = profile.context; this.page = profile.page; this.activeProfile = profileName;
+    await this.page.bringToFront();
+    await this.onPageChanged?.();
+  }
+
+  public async closeProfile(profileName: string): Promise<void> {
+    if (profileName === 'default') throw new Error('The default profile remains available until file completion.');
+    const profile = this.profiles.get(profileName);
+    if (!profile) throw new Error(`Unknown profile: ${profileName}`);
+    await this.finishProfile(profileName);
+    this.profiles.delete(profileName);
+    if (this.activeProfile === profileName) await this.useProfile('default');
+  }
+
+  public async beginTrace(profileName = this.activeProfile, file?: string): Promise<void> {
+    const profile = this.profiles.get(profileName);
+    if (!profile || profile.tracing) throw new Error('Profile missing or already tracing.');
+    await profile.context.tracing.start({ screenshots: true, snapshots: true, sources: false });
+    profile.tracing = true;
+    profile.tracePath = evidencePath(this.config, file || `${profileName}-${Date.now()}-trace.zip`);
+  }
+  public async endTrace(profileName = this.activeProfile): Promise<string> {
+    const profile = this.profiles.get(profileName);
+    if (!profile?.tracing || !profile.tracePath) throw new Error('Trace is not active.');
+    await profile.context.tracing.stop({ path: profile.tracePath }); profile.tracing = false;
+    return profile.tracePath;
+  }
+  private async finishProfile(key: string, videoTargetPath?: string): Promise<void> {
+    const profile = this.profiles.get(key); if (!profile) return;
+    await this.clearSessionStorageRestore(profile.page);
+    if (profile.tracing) await this.endTrace(key);
+    const video = profile.page.video();
+    await profile.context.close();
+    if (video) {
+      const target = videoTargetPath || (key !== 'default' ? evidencePath(this.config, `${key}-${Date.now()}.webm`) : undefined);
+      if (target) await video.saveAs(target);
+    }
+  }
+
+  public async checkpointProfiles(): Promise<any> {
+    const result: any = { active: this.activeProfile, dialogHandler: this.dialogHandler, profiles: [] };
+    const current = this.profiles.get(this.activeProfile); if (current && this.page) current.page = this.page;
+    for (const [key, profile] of this.profiles) {
+      const pages = [];
+      for (const page of profile.context.pages()) pages.push({ url:page.url(), active:page === profile.page,
+        sessionStorage:await page.evaluate(() => ({ ...window.sessionStorage })).catch(() => ({})) });
+      result.profiles.push({ key, options:profile.options, storageState:await profile.context.storageState({ indexedDB:true }), pages });
+    }
+    return result;
+  }
+  public async restoreProfiles(snapshot: any): Promise<void> {
+    await this.clearSessionStorageRestore();
+    for (const [key] of this.profiles) await this.finishProfile(key, evidencePath(this.config, `${key}-${Date.now()}-attempt.webm`));
+    this.profiles.clear(); this.dialogHandler = snapshot.dialogHandler;
+    for (const saved of snapshot.profiles) {
+      const context = await this.browser!.newContext({ ...saved.options, storageState:saved.storageState,
+        ...(this.config.har ? { recordHar:{ path:evidencePath(this.config, `${saved.key}-${Date.now()}-retry.har`), content:'embed' } } : {}) });
+      context.setDefaultTimeout(this.config.timeout);
+      context.on('page', page => page.on('pageerror', error => this.pageErrors.push(error.message)));
+      context.on('dialog', async dialog => { if (this.dialogHandler) await this.dialogHandler(dialog); else if (this.config.defaultDialogBehavior === 'accept') await dialog.accept().catch(() => {}); else await dialog.dismiss().catch(() => {}); });
+      let selected: Page | undefined;
+      for (const tab of saved.pages) {
+        const page = await context.newPage(); if (tab.active || !selected) selected = page;
+        if (/^https?:/.test(tab.url)) {
+          const origin = new URL(tab.url).origin;
+          const seed = await page.addInitScript(({ origin, values }) => { if (window === window.top && location.origin === origin) for (const [key,value] of Object.entries(values)) sessionStorage.setItem(key,String(value)); }, { origin,values:tab.sessionStorage });
+          try { await page.goto(tab.url,{waitUntil:'domcontentloaded'}); } finally { await seed.dispose(); }
+        }
+      }
+      selected ||= await context.newPage();
+      this.profiles.set(saved.key,{ context,page:selected,options:saved.options,tracing:false });
+      if (this.config.trace) await this.beginTrace(saved.key);
+    }
+    this.context = null; this.page = null;
+    await this.useProfile(snapshot.active);
+  }
+  public pageErrors: string[] = [];
+
   private browser: Browser | null = null;
 
   private context: BrowserContext | null = null;
@@ -18,6 +135,17 @@ export class WebAdapter {
 
   private dialogHandler: ((dialog: Dialog) => Promise<void>) | null = null;
 
+  private sessionStorageRestores = new Map<Page, { page: Page; script: Disposable; onNavigation: (frame: Frame) => void }>();
+  private get pendingSessionStorageRestore() { return this.sessionStorageRestores.values().next().value || null; }
+  private async clearSessionStorageRestore(target?: Page): Promise<void> {
+    for (const [page, pending] of this.sessionStorageRestores) {
+      if (target && page !== target) continue;
+      this.sessionStorageRestores.delete(page);
+      pending.page.off('framenavigated', pending.onNavigation);
+      try { await pending.script.dispose(); } catch (error) { if (!pending.page.isClosed()) throw error; }
+    }
+  }
+
   constructor(private config: FlowstrideConfig) {}
 
   public getPage(): Page {
@@ -26,7 +154,13 @@ export class WebAdapter {
     return this.page;
   }
 
+  public getBrowserInfo() {
+    if (!this.browser) throw new Error('Browser not initialised');
+    return { engine: this.browser.browserType().name(), version: this.browser.version(), headless: !!this.config.headless };
+  }
+
   public async initialise(audioInjectionPath?: string): Promise<void> {
+    await this.clearSessionStorageRestore();
     const launchArgs = this.config.headless
       ? [
           "--use-fake-ui-for-media-stream",
@@ -51,30 +185,48 @@ export class WebAdapter {
       );
     }
 
-    this.browser = await chromium.launch({
+    let engine = this.config.browser === 'firefox' ? firefox : this.config.browser === 'webkit' ? webkit : chromium;
+    if ((!this.config.browser || this.config.browser === 'chromium') && this.config.browserOptions?.userAgent) {
+      const configuredChromium = addExtra(pinnedChromium);
+      const stealth = stealthPlugin();
+      stealth.enabledEvasions.delete('user-agent-override');
+      configuredChromium.use(stealth);
+      engine = configuredChromium;
+    }
+    if (audioInjectionPath && this.config.browser && this.config.browser !== 'chromium') throw new Error('Audio file injection requires Chromium.');
+    this.profiles.clear(); this.activeProfile = 'default'; this.discoveredPages = []; this.dialogHandler = null;
+    this.browser = await engine.launch({
       headless: this.config.headless,
-
-      args: launchArgs,
+      // Native CI finalizes videos before closing the browser on cancellation.
+      ...(this.config.ci ? { handleSIGINT: false, handleSIGTERM: false } : {}),
+      args: !this.config.browser || this.config.browser === 'chromium' ? launchArgs : [],
     });
 
-    const videoDir = path.join(process.cwd(), ".flowstride", "videos");
+    if (this.browser.browserType().name() !== (this.config.browser || 'chromium')) {
+      await this.browser.close();
+      this.browser = null;
+      throw new Error('The launched browser does not match the requested browser.');
+    }
+
+    const videoDir = projectPath(process.cwd(), path.join('.flowstride', 'videos'));
 
     if (!fs.existsSync(videoDir)) fs.mkdirSync(videoDir, { recursive: true });
 
-    const customUserAgent =
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
-    this.context = await this.browser.newContext({
-      viewport: null,
-
-      userAgent: customUserAgent,
-
-      recordVideo: {
-        dir: videoDir,
-
-        size: { width: 1280, height: 800 },
-      },
-    });
+    const profile = this.config.device === 'phone' || this.config.device === 'landscape'
+      ? { ...devices['Pixel 7'], viewport: this.config.device === 'landscape' ? { width: 844, height: 390 } : { width: 390, height: 844 } }
+      : { viewport: { width: 1280, height: 800 }, userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' };
+    if (this.config.browser && this.config.browser !== 'chromium') delete (profile as { userAgent?: string }).userAgent;
+    const viewport = this.config.viewport || profile.viewport;
+    this.contextOptions = {
+      ...profile, viewport,
+      ...(this.config.browser === 'firefox' ? { isMobile: false } : {}),
+      ...validateContextOptions(this.config.browserOptions, this.config.browser, this.config.projectRoot),
+      ...(this.config.recordVideo === false ? {} : { recordVideo: { dir: videoDir, size: viewport } }),
+    };
+    this.context = await this.browser.newContext({ ...this.contextOptions,
+      ...(this.config.har ? { recordHar: { path: evidencePath(this.config, `default-${Date.now()}.har`), content: 'embed' as const, mode: 'full' as const } } : {}) });
+    this.pageErrors = [];
+    this.context.on('page', page => page.on('pageerror', error => this.pageErrors.push(error.message)));
 
     this.context.on("dialog", async (dialog) => {
       if (this.dialogHandler) {
@@ -97,6 +249,8 @@ export class WebAdapter {
     this.page = await this.context.newPage();
 
     this.page.setDefaultTimeout(this.config.timeout);
+    this.profiles.set('default', { context: this.context, page: this.page, options: this.contextOptions, tracing: false });
+    if (this.config.trace) await this.beginTrace();
   }
 
   public async acceptDialog(): Promise<void> {
@@ -112,7 +266,7 @@ export class WebAdapter {
   }
 
   public async injectAudio(filePath: string): Promise<void> {
-    const absolutePath = path.resolve(process.cwd(), filePath);
+    const absolutePath = projectPath(process.cwd(), filePath);
 
     if (!fs.existsSync(absolutePath)) {
       throw new Error(`Audio file not found at: ${absolutePath}`);
@@ -193,12 +347,26 @@ export class WebAdapter {
 
   public async injectStorage(
     cookies?: any[],
-
     localStorage?: Record<string, string>,
-
     fallbackDomain?: string,
+    sessionStorage?: Record<string, string>,
+    storageOrigin?: string,
   ): Promise<void> {
     if (!this.context || !this.page) return;
+    await this.clearSessionStorageRestore(this.page);
+    const page = this.page;
+    const originOf = (value?: string): string | undefined => {
+      try {
+        const url = new URL(value || '');
+        return ['http:', 'https:'].includes(url.protocol) ? url.origin : undefined;
+      } catch { return undefined; }
+    };
+    const hasSessionStorage = !!sessionStorage && Object.keys(sessionStorage).length > 0;
+    const origin = storageOrigin !== undefined ? originOf(storageOrigin)
+      : originOf(page.url()) || originOf(this.config.baseUrl);
+    if (hasSessionStorage && !origin) {
+      throw new Error('Session storage restoration requires a saved HTTP(S) origin, an open application page, or baseUrl.');
+    }
 
     if (cookies && cookies.length > 0) {
       const formattedCookies: any[] = [];
@@ -258,6 +426,29 @@ export class WebAdapter {
         }, localStorage);
       }
     }
+
+    if (hasSessionStorage) {
+      const restore = (data: { origin: string; values: Record<string, string> }) => {
+        if (window !== window.top || window.location.origin !== data.origin) return;
+        for (const [key, value] of Object.entries(data.values)) window.sessionStorage.setItem(key, value);
+      };
+      const data = { origin: origin!, values: sessionStorage! };
+      if (originOf(page.url()) === origin) {
+        await page.evaluate(restore, data);
+      } else {
+        // Seed before application scripts run; remove the seed after the first
+        // matching document so reloads preserve later application changes.
+        const script = await page.addInitScript(restore, data);
+        const onNavigation = (frame: Frame) => {
+          if (frame !== page.mainFrame() || originOf(frame.url()) !== origin) return;
+          void this.clearSessionStorageRestore(page).catch(() => {
+            console.warn('[Session]: Could not remove the completed session storage initializer.');
+          });
+        };
+        this.sessionStorageRestores.set(page, { page, script, onNavigation });
+        page.on('framenavigated', onNavigation);
+      }
+    }
   }
 
   public async getState(): Promise<{
@@ -266,6 +457,7 @@ export class WebAdapter {
     localStorage: Record<string, string>;
 
     sessionStorage: Record<string, string>;
+    storageOrigin?: string;
   }> {
     const cookies = (await this.context?.cookies()) || [];
 
@@ -289,7 +481,12 @@ export class WebAdapter {
       }
     }
 
-    return { cookies, localStorage, sessionStorage };
+    let storageOrigin: string | undefined;
+    try {
+      const url = new URL(this.page?.url() || '');
+      if (['http:', 'https:'].includes(url.protocol)) storageOrigin = url.origin;
+    } catch {}
+    return { cookies, localStorage, sessionStorage, storageOrigin };
   }
 
   public getCurrentUrl(): string {
@@ -329,7 +526,8 @@ export class WebAdapter {
 
     postData: string | null,
   ): string {
-    let curl = `curl -X ${method.toUpperCase()} '${url}'`;
+    const safeUrl = url.replace(/'/g, "'\\''");
+    let curl = `curl -X ${method.toUpperCase()} '${safeUrl}'`;
 
     for (const [key, value] of Object.entries(headers)) {
       if (key.startsWith(":")) continue;
@@ -661,9 +859,9 @@ export class WebAdapter {
       let actualValue = "";
 
       try {
-        actualValue = await targetLoc.inputValue({ timeout: 500 });
+        actualValue = await targetLoc.inputValue({ timeout: this.config.timeout });
       } catch {
-        actualValue = (await targetLoc.textContent({ timeout: 500 })) || "";
+        actualValue = (await targetLoc.textContent({ timeout: this.config.timeout })) || "";
       }
 
       const cleanActual = actualValue.replace(/[^a-zA-Z0-9]/g, "");
@@ -867,7 +1065,7 @@ export class WebAdapter {
 
     await targetLoc.scrollIntoViewIfNeeded();
 
-    const absolutePath = path.resolve(process.cwd(), filePath);
+    const absolutePath = projectPath(process.cwd(), filePath);
 
     if (!fs.existsSync(absolutePath)) {
       throw new Error(
@@ -876,13 +1074,10 @@ export class WebAdapter {
     }
 
     try {
-      const fileChooserPromise = this.page!.waitForEvent("filechooser", {
-        timeout: 5000,
-      });
-
-      await targetLoc.click();
-
-      const fileChooser = await fileChooserPromise;
+      const [fileChooser] = await Promise.all([
+        this.page!.waitForEvent('filechooser', { timeout: this.config.timeout }),
+        targetLoc.click({ timeout: this.config.timeout }),
+      ]);
 
       await fileChooser.setFiles(absolutePath);
     } catch (e) {
@@ -1892,24 +2087,18 @@ export class WebAdapter {
   }
 
   public async shutdown(videoTargetPath?: string): Promise<void> {
+    const failures: unknown[] = [];
     try {
-      const video = this.page?.video();
-
-      if (this.context) {
-        await this.context.close();
+      await this.clearSessionStorageRestore();
+      const active = this.profiles.get(this.activeProfile); if (active && this.page) active.page = this.page;
+      for (const [key] of this.profiles) {
+        try { await this.finishProfile(key, key === 'default' ? videoTargetPath : undefined); }
+        catch (error) { failures.push(error); }
       }
-
-      if (video && videoTargetPath) {
-        await video.saveAs(videoTargetPath);
-      }
-    } catch (err) {
-      console.warn(
-        "[WebAdapter]: Warning during browser shutdown or video transfer.",
-      );
     } finally {
-      if (this.browser) {
-        await this.browser.close().catch(() => {});
-      }
+      await this.browser?.close().catch(error => failures.push(error));
+      this.profiles.clear(); this.context = null; this.page = null; this.browser = null;
     }
+    if (failures.length) throw new AggregateError(failures, 'Browser evidence finalization failed.');
   }
 }

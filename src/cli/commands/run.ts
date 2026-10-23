@@ -1,3 +1,7 @@
+import { needsNativeBrowserProtocol } from '../../native/compatibility';
+import { projectPath } from '../../utils/projectPaths';
+import { loadNativeConfig, isCIEnvironment } from '../../ci/config';
+import { runNativeCI } from '../../ci/runtime';
 import * as fs from "fs";
 import * as path from "path";
 import * as dotenv from "dotenv";
@@ -21,7 +25,7 @@ export async function runAction(
   const root = process.cwd();
 
   const profileEnvPath = options.env
-    ? path.resolve(root, `.env.${options.env}`)
+    ? projectPath(root, `.env.${options.env}`)
     : null;
   const defaultEnvPath = path.resolve(root, ".env");
 
@@ -43,14 +47,8 @@ export async function runAction(
     }
   }
 
-  const isCI = !!(
-    process.env.CI ||
-    process.env.GITHUB_ACTIONS ||
-    process.env.GITLAB_CI ||
-    process.env.CIRCLECI ||
-    process.env.JENKINS_URL ||
-    process.env.FLOWSTRIDE_API_KEY
-  );
+  const config = loadNativeConfig(root, options);
+  const isCI = !!config.ci;
 
   if (isCI) {
     console.log(
@@ -71,38 +69,6 @@ export async function runAction(
     `\n[Flowstride]: Starting execution suite at "${resolvedPath}"...`,
   );
 
-  const configPath = path.resolve(root, "flowstride.config.json");
-  let localConfig: any = {};
-
-  if (fs.existsSync(configPath)) {
-    try {
-      const fileContent = fs.readFileSync(configPath, "utf-8");
-      localConfig = JSON.parse(fileContent);
-      console.log(
-        `[Config]: Loaded project configuration from flowstride.config.json`,
-      );
-    } catch (e: any) {
-      console.warn(
-        `[Warning]: Could not parse flowstride.config.json: ${e.message}`,
-      );
-    }
-  }
-
-  const config: FlowstrideConfig = {
-    headless: isCI
-      ? true
-      : options.headed
-        ? false
-        : (localConfig.headless ?? true),
-    timeout: localConfig.timeout ?? 30000,
-    bail: options.bail ?? localConfig.bail ?? false,
-    baseUrl: process.env.BASE_URL ?? localConfig.baseUrl,
-    defaultDialogBehavior: isCI
-      ? "dismiss"
-      : (localConfig.defaultDialogBehavior ?? "dismiss"),
-    pluginsDir: localConfig.pluginsDir,
-  } as any;
-
   if (isCI) {
     console.log(`   > Headless Mode: ${config.headless ? "Forced ON" : "OFF"}`);
     console.log(
@@ -111,8 +77,8 @@ export async function runAction(
     console.log(`   > Artifact Auto-Staging: ENABLED\n`);
   }
 
-  let workerCount = options.workers ? parseInt(options.workers, 10) : 1;
-  if (isNaN(workerCount) || workerCount < 1) {
+  let workerCount = options.workers ? Number(options.workers) : 1;
+  if (!Number.isSafeInteger(workerCount) || workerCount < 1) {
     console.error(
       `\n[Error]: Invalid worker count "${options.workers}". Must be an integer greater than 0.`,
     );
@@ -129,6 +95,8 @@ export async function runAction(
     );
     workerCount = maxSafeWorkers;
   }
+
+  if (config.manifest?.maxWorkers !== undefined && config.manifest.maxWorkers !== 'unlimited') workerCount = Math.min(workerCount, config.manifest.maxWorkers);
 
   const web = new WebAdapter(config);
   const api = new ApiAdapter(config);
@@ -172,6 +140,8 @@ export async function runAction(
       const proWorkerModule = await import(pathToFileURL(proWorkerPath).href);
       const proOrchModule = await import(pathToFileURL(proOrchPath).href);
 
+      if (config.ci && proOrchModule.FlowOrchestrator.nativeCIProtocol !== 1) throw new Error('Installed Pro engine does not support native CI protocol 1; install the matching Pro candidate.');
+      if (needsNativeBrowserProtocol(resolvedPath, config) && (proWorkerModule.FlowWorker.nativeBrowserProtocol !== 2 || proOrchModule.FlowOrchestrator.nativeBrowserProtocol !== 2)) throw new Error('Installed Cloud engine does not support these native browser capabilities. Install the matching Cloud archive; this run will use OS fallback.');
       ActiveFlowWorker = proWorkerModule.FlowWorker;
       ActiveFlowOrchestrator = proOrchModule.FlowOrchestrator;
       engineMode = "Enterprise (Pro)";
@@ -194,6 +164,12 @@ export async function runAction(
   );
 
   const orchestrator = new ActiveFlowOrchestrator(worker, workerCount, config);
+
+  if (isCI) {
+    const result = await runNativeCI(worker, orchestrator, resolvedPath, config, engineMode);
+    console.log(`[Flowstride]: ${result.status}; reports: ${config.artifactsDir}`);
+    process.exit(result.status === 'passed' ? 0 : result.status === 'interrupted' ? 130 : 1);
+  }
 
   try {
     await orchestrator.start(resolvedPath);

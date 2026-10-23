@@ -19,6 +19,10 @@ export class DataGenerators {
     this.workerIdContext = workerId;
   }
 
+  public sensitiveValues(): string[] {
+    return [...this.memoryBank.entries()].filter(([key]) => /password|passcode|token|otp|pin|secret/i.test(key)).map(([,value]) => value);
+  }
+
   public resolve(template: string): string {
     if (!template || typeof template !== "string") return template;
 
