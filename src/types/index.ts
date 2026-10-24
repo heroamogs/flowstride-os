@@ -1,4 +1,15 @@
 export interface FlowstrideConfig {
+  browser?: 'chromium' | 'firefox' | 'webkit';
+  browserOptions?: import('playwright').BrowserContextOptions;
+  retries?: number;
+  failOnFlaky?: boolean;
+  trace?: boolean;
+  har?: boolean;
+  domSnapshots?: boolean;
+  shard?: string;
+  shardHistory?: string;
+  updateBaselines?: boolean;
+
   ci?: boolean;
   flowRoot?: string;
   projectRoot?: string;
@@ -38,6 +49,8 @@ export interface SessionData {
   tokens: Record<string, any>;
   cookies?: any[];
   localStorage?: Record<string, string>;
+  sessionStorage?: Record<string, string>;
+  storageOrigin?: string;
   createdAt: number;
   lastUsedAt: number;
   persist: boolean;

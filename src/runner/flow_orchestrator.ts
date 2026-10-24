@@ -1,3 +1,6 @@
+import { DashboardBrowser } from '../native/dashboard';
+import { serveDOMSnapshot } from '../native/evidence';
+import { executionPlan } from '../ci/distribution';
 import { isLocalDashboardRequest } from '../security/localDashboard';
 import { discoverFlows, flowIdentity, projectPath } from '../utils/projectPaths';
 import * as fs from "fs";
@@ -11,6 +14,7 @@ import { FlowstrideConfig } from "../types";
 import { PdfGenerator } from "../reporting/pdf_generator";
 
 export class FlowOrchestrator {
+  public static readonly nativeBrowserProtocol = 2;
   public static readonly nativeCIProtocol = 1;
   public readonly nativeEventProtocol = 1;
   private wss: WebSocketServer | null = null;
@@ -20,6 +24,9 @@ export class FlowOrchestrator {
   private stepStatusRegistry: Map<string, string> = new Map();
   private pdfGenerator: PdfGenerator;
   private disconnectTimer: NodeJS.Timeout | null = null;
+  private dashboardBrowser = new DashboardBrowser();
+  private closing = false;
+  private browserInfoByFile = new Map<string, any>();
 
   constructor(
     private worker: FlowWorker,
@@ -33,6 +40,8 @@ export class FlowOrchestrator {
   }
 
   private forwardToDashboard(type: string, payload: any) {
+    if (type === 'BROWSER_INFO') this.browserInfoByFile.set(payload.fileName, payload);
+    if (type === 'SUITE_START') this.browserInfoByFile.clear();
     this.config?.onRunEvent?.({ type, payload });
     if (this.wss) {
       this.wss.clients.forEach((client) => {
@@ -45,7 +54,7 @@ export class FlowOrchestrator {
   private async executeTestRun(targetPath: string) {
     this.forwardToDashboard("SUITE_START", {});
 
-    const filesToProcess = discoverFlows(targetPath);
+    const filesToProcess = executionPlan(targetPath, this.config).files;
     if (this.config) this.config.flowRoot = fs.statSync(targetPath).isDirectory() ? targetPath : path.dirname(targetPath);
 
     this.globalTestScenarios = [];
@@ -94,6 +103,7 @@ export class FlowOrchestrator {
       this.httpServer = http.createServer((req, res) => {
         if (!isLocalDashboardRequest(req.headers.host, req.headers.origin)) { res.writeHead(403); res.end('Forbidden'); return; }
           res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+          if (serveDOMSnapshot(req, res, this.config)) return;
 
         if (req.url && req.url.startsWith("/videos/")) {
           let urlObj;
@@ -228,6 +238,7 @@ export class FlowOrchestrator {
       this.wss = new WebSocketServer({ server: this.httpServer, verifyClient: (info: { origin: string; req: http.IncomingMessage }) => Boolean(info.origin) && isLocalDashboardRequest(info.req.headers.host, info.origin) });
 
       this.wss.on("connection", (ws) => {
+        for (const payload of this.browserInfoByFile.values()) ws.send(JSON.stringify({ type: 'BROWSER_INFO', payload }));
         if (this.disconnectTimer) {
           clearTimeout(this.disconnectTimer);
           this.disconnectTimer = null;
@@ -273,7 +284,7 @@ export class FlowOrchestrator {
         });
 
         ws.on("close", () => {
-          if (this.wss && this.wss.clients.size === 0) {
+          if (!this.closing && this.wss && this.wss.clients.size === 0) {
             this.disconnectTimer = setTimeout(async () => {
               console.log(
                 chalk.yellow(
@@ -322,8 +333,8 @@ export class FlowOrchestrator {
               !!process.env.FLOWSTRIDE_API_KEY;
 
             if (!isStrictHeadless) {
-              const { default: open } = await import("open");
-              await open(localUrl);
+              await this.dashboardBrowser.open(localUrl, this.config?.browser);
+              console.log(`[Dashboard]: ${this.config?.browser === 'firefox' || this.config?.browser === 'webkit' ? this.config.browser : 'system default'} dashboard window; test browser reported after launch${this.config?.headless ? ' (headless tests)' : ''}.`);
 
               console.log(
                 chalk.yellow("[Dashboard]: Waiting for UI connection..."),
@@ -345,6 +356,7 @@ export class FlowOrchestrator {
 
             resolve(result);
           } catch (err) {
+            await this.dashboardBrowser.close();
             reject(err);
           }
         });
@@ -359,6 +371,8 @@ export class FlowOrchestrator {
   }
 
   public async close() {
+    this.closing = true;
+    await this.dashboardBrowser.close();
     if (this.disconnectTimer) clearTimeout(this.disconnectTimer);
     this.wss?.clients.forEach(client => client.terminate());
     this.wss?.close(); this.httpServer?.close();

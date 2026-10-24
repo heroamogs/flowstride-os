@@ -10,12 +10,13 @@ concurrency:
   cancel-in-progress: true
 jobs:
   engine:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         node: ['22.12.0', '24']
+        os: [ubuntu-24.04, macos-latest]
     env:
       CI: 'true'
       PLAYWRIGHT_SKIP_BROWSER_GC: '1'
@@ -46,8 +47,8 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Build engine and dashboard from source
         run: npm run build:candidate
-      - name: Install matching Chromium and Linux dependencies
-        run: node dist/cli/index.js install --with-deps
+      - name: Install matching Chromium, Firefox and WebKit
+        run: node dist/cli/index.js install chromium firefox webkit --with-deps
       - name: Unit tests
         run: npm run test:unit
       - name: Security regression tests
@@ -62,7 +63,12 @@ jobs:
       - name: Native CI, game, upload, failure and dashboard acceptance
         env:
           FLOWSTRIDE_THREE_BUILD: ${{ runner.temp }}/flowstride-three/node_modules/three/build
-        run: npm test
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run --auto-servernum npm test
+          else
+            npm test
+          fi
       - name: Verify and package candidate
         run: |
           npm run verify:candidate
@@ -78,9 +84,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: candidate-node-${{ matrix.node }}-${{ github.sha }}
+          name: engine-${{ matrix.os }}-node-${{ matrix.node }}-${{ github.sha }}
           path: |
             *.tgz
             package-inventory.json
             development-audit.json
+            flowstride-artifacts/
           retention-days: 14

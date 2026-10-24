@@ -61,6 +61,14 @@ test('built dashboard switches each real flow screen/history, isolates logs, and
   await page.getByRole('tab',{name:B,exact:true}).click();await expectSource(b[1].screenshot);await page.getByRole('tab',{name:A,exact:true}).click();assert.equal(await page.getByText('Viewing Historical State',{exact:true}).count(),0);
   await page.getByRole('button',{name:'Rerun',exact:true}).click();await page.getByText('Awaiting execution...',{exact:true}).waitFor();assert.equal(await image.count(),0);assert.equal(await page.getByRole('tab').count(),0);assert.equal(requests.at(-1).type,'RERUN_REQ');assert.equal(requests.at(-1).payload.filePath,A);
   send({type:'SUITE_START',payload:{}});for(const event of events.filter(event=>event.payload?.fileName===A))send(event);send({type:'RUN_COMPLETE',payload:{status:'success'}});await expectSource(a.at(-1).screenshot);assert.equal(await page.getByRole('tab').count(),1);
+  send({type:'STEP_UPDATE',payload:{...a[0],status:'failed',attempt:1,profile:'customer',domSnapshot:'first.dom.html'}});
+  send({type:'STEP_UPDATE',payload:{...a[0],screenshot:b[0].screenshot,status:'passed',attempt:2,profile:'admin',domSnapshot:'second.dom.html'}});
+  await page.locator(`[data-flow-file="${A}"][data-step-id="${a[0].id}"]`).click();
+  await expectSource(b[0].screenshot);
+  await page.getByLabel('History attempt').selectOption('1'); await expectSource(a[0].screenshot);
+  assert.match(await page.getByRole('link',{name:'Read DOM snapshot'}).getAttribute('href'),/first\.dom\.html/);
+  await page.getByLabel('History attempt').selectOption('2'); await expectSource(b[0].screenshot);
+  assert.match(await page.getByRole('link',{name:'Read DOM snapshot'}).getAttribute('href'),/second\.dom\.html/);
   assert.deepEqual(errors,[]);if(process.env.FLOWSTRIDE_DASHBOARD_EVIDENCE){fs.mkdirSync(process.env.FLOWSTRIDE_DASHBOARD_EVIDENCE,{recursive:true});await page.screenshot({path:path.join(process.env.FLOWSTRIDE_DASHBOARD_EVIDENCE,required('./package.json').name==='flowstride'?'oss-tabs.png':'pro-tabs.png')});}
  }finally{await worker?.shutdown();await browser?.close();for(const socket of sockets.clients)socket.terminate();await new Promise(resolve=>sockets.close(resolve));server.closeAllConnections();await new Promise(resolve=>server.close(resolve));fs.rmSync(directory,{recursive:true,force:true});}
 });

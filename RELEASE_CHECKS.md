@@ -1,7 +1,11 @@
-Release checks run on pushes, pull requests and manual dispatches. They use read-only GitHub permissions and actions pinned to full commit hashes. Node 22.12.0 and Node 24 each build the Rust/WASM dashboard and TypeScript engine from locked dependencies, then run unit tests, security regressions, real Chromium native CI/game/upload/failure/dashboard tests, package inventory checks and clean archive consumer acceptance.
+# Engine release checks
 
-Runtime dependency audits for the engine and dashboard block high/critical findings. Full development dependency audits are retained and warn separately; a passing check does not assert that development dependencies have no advisories. The development servers should not be exposed as production services. Billing is maintained separately in the private Cloud repository.
+Pushes and pull requests build the engine and Rust/WASM dashboard from locked dependencies. GitHub Actions covers Ubuntu and macOS with Node.js 22.12.0 and Node.js 24. Matching Chromium, Firefox and WebKit binaries are installed before unit tests, security regressions and the full native/dashboard regression suite.
 
-OSS CI never receives private Pro source or credentials. Pro CI and its candidate artifacts remain in the private repository. Conditional tests requiring both engines or Cloud source are also run locally during release qualification; their skips in a standalone repository are expected. Supported game coverage is browser canvas and the pinned Three.js fixture on Chromium; other engines/devices require separate qualification.
+High and critical findings in shipped engine/dashboard dependencies fail the checks. Full development audits are retained separately. Package inventory and clean archive execution checks verify the distributable. Each OS/Node job retains its archive and audit evidence.
 
-Publishing is a separate authorized release operation. OSS previews use npm's `next` tag. Pro archives are delivered by the owner through the existing private host; these workflows do not upload them there or change Cloud's download target.
+OS CI uses public source only. The private Cloud repository can additionally check the matching public OS source for installation, authorization, browser selection and engine fallback. Private engine source and archives stay in the private repository and download channel. Checks requiring both repositories can also be run locally with explicit source paths.
+
+Browser tests qualify their covered paths; Three.js fixtures are qualified on Chromium. The documented Chromium locale and Firefox/WebKit forced-offline HAR limitations remain separate known cases. Passing tests do not establish every framework, device or operating-system combination.
+
+Publishing is a separate operation. These workflows do not publish npm packages, upload the private download archive or change the Cloud service's selected download.

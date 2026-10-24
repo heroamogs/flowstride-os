@@ -42,6 +42,13 @@ export class ApiAdapter {
     };
   }
 
+  public checkpointState() {
+    return structuredClone({ globalHeaders:this.globalHeaders, status:this.lastStatus, body:this.lastBody, headers:this.lastHeaders, responseTime:this.lastResponseTime });
+  }
+  public restoreState(snapshot: ReturnType<ApiAdapter['checkpointState']>) {
+    const data = structuredClone(snapshot); this.globalHeaders=data.globalHeaders; this.lastStatus=data.status; this.lastBody=data.body; this.lastHeaders=data.headers; this.lastResponseTime=data.responseTime;
+  }
+
   public resetState(): void {
     this.lastStatus = null;
     this.lastBody = null;

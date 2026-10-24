@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { mergeResults } from '../ci/distribution';
+import { projectPath } from '../utils/projectPaths';
 import { cloudApiBase, cloudFailure } from '../utils/cloud';
 import { loadCloudEnvironment, cloudSessionDescription, tokenExpiryDescription } from './utils/cloudSession';
 import { loadNativeConfig } from '../ci/config';
@@ -28,7 +30,7 @@ let API_BASE = cloudApiBase(process.env);
 program
   .name("flowstride")
   .description("Flowstride: The Enterprise Flow-First Automation CLI")
-  .version("1.0.20-rc.6");
+  .version(require("../../package.json").version);
 
 program
   .command("init")
@@ -337,6 +339,10 @@ program
   )
   .option('--ci', 'Run without a dashboard and write CI reports')
   .option('--device <profile>', 'desktop, phone, or landscape')
+  .option('--browser <engine>', 'chromium, firefox, or webkit')
+  .option('--shard <index/total>', 'Run one deterministic CI shard, e.g. 1/4')
+  .option('--shard-history <file>', 'Use merged timing history for shard balancing')
+  .option('--update-baselines', 'Explicitly update ARIA baselines locally')
   .option('--config <file>', 'Path to the Flowstride configuration')
   .option('--env <name>', 'Environment profile')
   .action(
@@ -526,17 +532,29 @@ program
   });
 
 program.command('install')
-  .description('Install Chromium matching this Flowstride engine')
+  .description('Install browsers matching this Flowstride engine')
+  .argument('[browsers...]', 'chromium, firefox, or webkit')
   .option('--with-deps', 'Install operating-system browser dependencies')
-  .action((options: { withDeps?: boolean }) => {
+  .action((browsers: string[], options: { withDeps?: boolean }) => {
+    if (browsers.some(browser => !['chromium','firefox','webkit'].includes(browser))) throw new Error('Unknown browser.');
     const { execFileSync } = require('node:child_process');
-    execFileSync(process.execPath, [path.join(path.dirname(require.resolve('playwright/package.json')), 'cli.js'), 'install', ...(options.withDeps ? ['--with-deps'] : []), 'chromium'], { stdio: 'inherit', env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_GC: '1' } });
+    execFileSync(process.execPath, [path.join(path.dirname(require.resolve('playwright/package.json')), 'cli.js'), 'install', ...(options.withDeps ? ['--with-deps'] : []), ...(browsers.length ? browsers : ['chromium'])], { stdio: 'inherit', env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_GC: '1' } });
+    console.log(`[Browsers]: Matching binaries installed: ${(browsers.length ? browsers : ['chromium']).join(', ')}. Use run --browser <engine> to select one.`);
   });
 
 program.command('ci')
   .description('Set up native Flowstride CI')
   .command('init <provider>')
   .description('Generate a GitHub Actions workflow without overwriting existing files')
-  .action((provider: string) => initCI(provider));
+  .option('--browsers <names>', 'Comma-separated browser matrix', 'chromium')
+  .option('--shards <total>', 'Number of CI machines per browser', '1')
+  .action((provider: string, options: { browsers?: string; shards?: string }) => initCI(provider, options));
 
+program.command('merge <summaries...>')
+  .description('Merge complete native shard results and evidence')
+  .option('--output <directory>', 'New project directory for merged results', 'flowstride-merged')
+  .action((summaries: string[], options: { output: string }) => { const result = mergeResults(summaries, options.output); console.log(`Merged Flowstride result: ${result.status}`); process.exitCode = result.status === 'passed' ? 0 : 1; });
+program.command('trace <file>')
+  .description('Open a local Playwright trace without uploading it')
+  .action((file: string) => { const { execFileSync } = require('node:child_process'); const local = projectPath(process.cwd(), file); execFileSync(process.execPath, [path.join(path.dirname(require.resolve('playwright/package.json')), 'cli.js'), 'show-trace', local], { stdio: 'inherit' }); });
 program.parse(process.argv);

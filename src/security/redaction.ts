@@ -1,4 +1,4 @@
-const sensitive = /password|passcode|secret|token|authorization|cookie|api.?key|master.?key|otp|email|curlString|strippedDom/i;
+const sensitive = /password|passcode|secret|token|authorization|cookie|api.?key|master.?key|otp|email|curlString|rawReplayRequest|strippedDom/i;
 export function redactText(input: string, secrets: string[] = []): string {
   let value = String(input);
   for (const secret of secrets.filter(s => typeof s === 'string' && s.length >= 4).sort((a,b) => b.length - a.length)) value = value.split(secret).join('[REDACTED]');
@@ -28,6 +28,7 @@ export function redactWorkerPayload(type: string, payload: any, secrets: string[
   if (!localDebug || !payload || !result) return result;
   if (type === 'LOG_EVENT' && ['REST', 'GRAPHQL'].includes(payload.type) && typeof payload.details?.curlString === 'string') {
     result.details.rawCurlString = payload.details.curlString;
+    if (payload.details.rawReplayRequest) result.details.rawReplayRequest = payload.details.rawReplayRequest;
 
   }
   return result;

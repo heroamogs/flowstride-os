@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { flowStep, lastCapturedStep } from '../utils/flowHistory';
 import {
   ChevronLeft,
@@ -28,13 +29,16 @@ export const BrowserView = () => {
   } = useFlowStore();
 
   const selectedStep = flowStep(testScenarios, activeTestFile, activeStepId);
-  const hasHistoricalSnapshot = !isRunning && !!selectedStep?.screenshot;
+  const [historyAttempt, setHistoryAttempt] = useState<number | null>(null);
+  useEffect(() => { setHistoryAttempt(null); }, [activeTestFile, activeStepId, isRunning]);
+  const selectedEvidence = selectedStep?.attemptHistory?.find(item => item.attempt === (historyAttempt || selectedStep.attempt)) || selectedStep;
+  const hasHistoricalSnapshot = !isRunning && !!selectedEvidence?.screenshot;
 
   const activeUrl = currentUrls[activeTestFile] || "about:blank";
   const activeTitle = pageTitles[activeTestFile] || "New Tab";
   const activeFrame = browserFrames[activeTestFile] || null;
 
-  const visualSource = !isRunning && selectedStep ? selectedStep.screenshot
+  const visualSource = !isRunning && selectedStep ? selectedEvidence?.screenshot
     : activeFrame || (!isRunning ? lastCapturedStep(testScenarios, activeTestFile)?.screenshot : null);
 
   const uniqueFiles = Array.from(new Set(testScenarios.map((s) => s.fileName)));
@@ -266,6 +270,11 @@ export const BrowserView = () => {
                   }}
                 >
                   {selectedStep?.command}
+                  {selectedEvidence?.profile && <span> · Profile: {selectedEvidence.profile}</span>}
+                  {(selectedStep?.attemptHistory?.length || 0) > 1 && <select aria-label="History attempt" value={historyAttempt || selectedStep?.attempt || 1} onChange={event => setHistoryAttempt(Number(event.target.value))} style={{ marginLeft: 10, color: 'white', background: '#1e293b' }}>
+                    {selectedStep!.attemptHistory!.map(item => <option key={item.attempt} value={item.attempt}>Attempt {item.attempt} · {item.status}</option>)}
+                  </select>}
+                  {selectedEvidence?.domSnapshot && <a href={`/evidence?file=${encodeURIComponent(selectedEvidence.domSnapshot)}`} target="_blank" rel="noopener noreferrer" style={{ marginLeft:10, color:'#c4b5fd' }}>Read DOM snapshot</a>}
                 </div>
               </div>
             </div>

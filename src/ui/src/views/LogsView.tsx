@@ -255,8 +255,12 @@ export const LogsView = () => {
     updateReplay("isLoading", true);
     updateReplay("response", null);
     updateReplay("status", null);
+    updateReplay('error', null);
+    const requestId = crypto.randomUUID();
+    updateReplay('requestId', requestId);
 
     sendToRunner("REPLAY_REQ", {
+      requestId,
       method: activeReplay.method,
       url: activeReplay.url,
       headers: activeReplay.headers,
@@ -588,7 +592,7 @@ export const LogsView = () => {
               </div>
             </div>
 
-            {activeReplay.status && (
+            {(activeReplay.status !== null || activeReplay.error) && (
               <div
                 style={{
                   marginTop: "10px",
@@ -611,23 +615,23 @@ export const LogsView = () => {
                       fontWeight: "bold",
                     }}
                   >
-                    LIVE RESPONSE:
+                    {activeReplay.error ? 'REPLAY ERROR:' : 'LIVE RESPONSE:'}
                   </span>
                   <span
                     style={{
                       backgroundColor:
-                        activeReplay.status < 400
+                        activeReplay.status !== null && activeReplay.status < 400
                           ? "rgba(52, 211, 153, 0.1)"
                           : "rgba(248, 113, 113, 0.1)",
-                      color: activeReplay.status < 400 ? "#34d399" : "#f87171",
-                      border: `1px solid ${activeReplay.status < 400 ? "rgba(52, 211, 153, 0.2)" : "rgba(248, 113, 113, 0.2)"}`,
+                      color: activeReplay.status !== null && activeReplay.status < 400 ? "#34d399" : "#f87171",
+                      border: `1px solid ${activeReplay.status !== null && activeReplay.status < 400 ? "rgba(52, 211, 153, 0.2)" : "rgba(248, 113, 113, 0.2)"}`,
                       fontSize: "10px",
                       padding: "2px 6px",
                       borderRadius: "4px",
                       fontWeight: "bold",
                     }}
                   >
-                    {activeReplay.status}
+                    {activeReplay.error ? 'Request error' : activeReplay.status}
                   </span>
                 </div>
                 <div

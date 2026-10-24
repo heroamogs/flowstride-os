@@ -340,7 +340,7 @@ export class Parser {
       return {
         id: `scenario_${this.scenarioCounter}_S${this.stepCounter++}`,
         blockDescription: this.currentBlockDescription,
-        action: "plugin",
+        action: alias === "flow" ? "native" : "plugin",
         payload: {
           pluginAlias: alias,
           pluginMethod: method,

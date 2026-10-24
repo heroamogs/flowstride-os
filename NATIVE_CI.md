@@ -1,179 +1,98 @@
-# Native CI and browser-game candidate
+# Native CI and browser-game testing
 
-This candidate adds native CI and game APIs to both engines. Managed Cloud
-execution remains retired. Existing npm OSS / private Pro archive distribution
-and fallback remain supported. Consumer project migrations are managed separately. Native CI uses protocol 1.
-The public CLI selects compatible Pro engines or logs the reason and falls back
-to OSS. Older Pro CLIs may own the npm binary and do not understand the new
-commands; install both candidates when testing the Pro path.
+Flowstride runs `.flow` tests locally and in CI without a custom runner wrapper.
 
-The candidates pin Playwright 1.59.1 in both engines; the native install command
-installs that engine's matching Chromium.
+## Installation and execution
 
-## Local candidate check
-
-Use a disposable project first. Install the OSS archive, then the Pro archive if
-needed. Both candidates must be installed for testing the new Pro path. The
-currently hosted Cloud download still serves the existing release; this local
-candidate does not change that endpoint or its archive.
+Use Node.js 22.12 or newer. Install Flowstride as a project dependency and commit the lockfile:
 
 ```sh
-npm install --save-dev /absolute/path/flowstride-1.0.20-rc.6.tgz
-# Optional: install the local matching Pro candidate after project dependencies.
-npm install --no-save /absolute/path/flowstride-pro-1.0.15-rc.5.tgz
-npx --no-install flowstride install
-npx --no-install flowstride run --ci
+npm install --save-dev flowstride
+npx flowstride install
+npx flowstride run flows --ci
 ```
 
-Pro continues to require your normal valid developer credentials for licensed
-features. Installing Pro uses `--no-save`: another `npm ci` can remove it. Keep
-project dependency installation before Pro installation. An installed Pro package
-can own `node_modules/.bin/flowstride`; both that entry point and the public OSS
-entry point must be covered when checking fallback.
+In CI, use `npm ci` before browser installation and test execution. Browser installation uses the Chromium version matching the installed Flowstride engine by default. See [native browser workflows](NATIVE_BROWSER.md) for Firefox, WebKit and browser configuration. Linux runners may require system browser dependencies; the generated GitHub workflow handles installation for its runner.
 
-The sample in `examples/native-game` uses a tiny local canvas game. Copy its
-files into a disposable project containing the installed candidates, then run
-the command above. `server.mjs` is the game fixture's HTTP server; it contains no
-Flowstride runner, adapter, worker, or CI orchestration code. A real application
-uses its normal development/start command instead.
+Cloud users authenticate using `npx flowstride login`. In CI, supply the developer token through the `FLOWSTRIDE_TOKEN` secret, never in committed files. Install project dependencies before login, then install the matching browser and run the tests. The OS CLI uses compatible, authorized Cloud engine installations and falls back to OS when the Cloud engine is unavailable.
 
-## Configuration
+Generate a GitHub Actions workflow explicitly:
 
-`flowstride.config.json` supports `testDir`, `baseUrl`, `timeout`, `device`
-(`desktop`, `phone`, `landscape`), optional `viewport`, `pluginsDir`,
-`artifactsDir`, `recordVideo` (boolean), `browserErrors` (`fail` or `record`), and
-`webServer` (`command`, local readiness `url`, optional `cwd` and `timeout`).
-Malformed configuration and unsafe output paths fail before execution.
+```sh
+npx flowstride ci init github
+```
 
-Native CI is selected by `--ci` or a recognized CI environment. It runs without
-a dashboard server, returns nonzero for failed/incomplete/crashed execution,
-and writes latest `summary.json`/`junit.xml` reports at the configured artifact
-root. Media and attachments go into a unique run directory referenced by the
-summary, so local reruns retain history without mixing evidence.
-SIGINT/SIGTERM produce interrupted results. The run owns its optional local
-server and refuses an already-serving readiness URL.
+The command requires an npm project with a committed lockfile and refuses to overwrite an existing workflow. It does not run automatically during installation.
 
-Cloud reporting is off by default in native CI. `cloudSync: true` explicitly
-allows existing authenticated reporting; matching Cloud deployment and configured media storage are required. Reporting and
-video status are written separately in the summary and `.flowstride/cloud-sync.json`;
-a reporting failure does not turn a passed test into a failed test. Normal interactive reporting and the restored
-Cloud URL overrides remain separate from retired managed execution.
+## Configuration and reports
 
-`npx flowstride ci init github` generates a workflow explicitly, never during
-installation, and refuses to overwrite it. It assumes an npm project with a
-committed lockfile. Other package managers and monorepos can use the composite
-action's install-command and working-directory inputs. The composite action is
-in the OSS repository's `action/` directory and becomes remotely usable only
-once that source is pushed. Pin its commit when configuring a consumer workflow.
-Pro jobs pass a developer token as a secret; dependency installation precedes
-Pro login/install, matching-browser installation, execution, and artifact upload.
+`flowstride.config.json` supports `testDir`, `baseUrl`, `timeout`, `device` (`desktop`, `phone`, `landscape`), optional `viewport`, `pluginsDir`, `artifactsDir`, `recordVideo` (boolean), `browserErrors` (`fail` or `record`), and `webServer` (`command`, local readiness `url`, optional `cwd` and `timeout`).
 
-## Native game actions
+Malformed configuration and unsafe output paths fail before execution. Configuration, plugin, environment, upload, session and output paths must remain inside the project, including resolved symlinks.
 
-Register the built-in alias with `let game = "flowstride:game"`. It requires no
-custom plugin file. Available actions:
+Native CI is selected by `--ci` or a recognized CI environment. It runs headlessly without a dashboard server and returns nonzero for failed, incomplete, crashed or interrupted execution. JSON and JUnit reports are written at the configured artifact root, which defaults to `flowstride-artifacts`. Media and attachments use a unique run directory referenced by the summary.
 
-- `tap`: canvas selector, x/y; relative coordinates by default, or `unit: "pixels"`.
-- `drag`/`swipe`: canvas, from/to coordinates, optional duration and input type.
+Flow discovery is recursive. `.first.flow` files run before ordinary files. A failed scenario leaves its remaining steps untested and execution continues to later scenarios. `--bail` stops later work; the Cloud engine executes bail runs sequentially.
+
+An optional configured local web server is started and stopped with the run. Flowstride rejects a readiness URL that is already serving.
+
+Cloud reporting is disabled by default in native CI. Set `cloudSync: true` to enable authenticated reporting. Reporting and video status are recorded separately in the summary and `.flowstride/cloud-sync.json`; a reporting failure does not change a passed test into a failed test.
+
+## Browser-game actions
+
+Register the built-in alias:
+
+```text
+let game = "flowstride:game";
+```
+
+The built-in game API provides:
+
+- `tap`: canvas selector and coordinates; relative coordinates by default, or `unit: "pixels"`.
+- `drag` and `swipe`: canvas, start/end coordinates, optional duration and input type.
 - `key`: key name and optional hold duration.
 - `checkpoint`: named screenshot, optionally of one canvas.
-- `snapshot` and `expectVisual`: canvas comparison with explicit minChange/maxChange.
-- `state`/`expectState`: exposed state, optional dotted path and expected equals.
-- `snapshotState`/`expectPreserved`: compare selected state across actions/reloads.
-- `fixture`: a named fixture registered by the application in explicit test mode.
-- `select`: a stable object ID resolved by the game bridge, then real pointer input.
+- `snapshot` and `expectVisual`: canvas comparison with explicit change thresholds.
+- `state` and `expectState`: exposed application state with optional dotted paths.
+- `snapshotState` and `expectPreserved`: compare selected state across actions or reloads.
+- `fixture`: a named fixture explicitly registered by the application in test mode.
+- `select`: a stable object ID resolved by a game bridge, followed by real pointer input.
 
-Visual checks establish pixel differences, not gameplay correctness; pair them
-with state or UI assertions. Mobile profiles emulate Chromium devices, not
-physical phones. Touch dragging currently uses Chromium CDP.
+The package includes a small runnable example in `examples/native-game`. Its HTTP server serves the fixture application; it is not a custom test runner. Use your application's normal start command for your own game.
 
-For a generic browser game, import `registerGame` from
-`flowstride/dist/game/bridge.js` and supply readState and optional test-only
-fixtures. The function manages the browser bridge; no global setup is required
-in the test runner.
+Visual checks measure pixel differences. Pair them with state or UI assertions to verify gameplay behavior. Mobile profiles emulate Chromium devices; physical device testing is a separate qualification. Touch dragging currently uses Chromium CDP.
 
-## Three.js integration
+## Application bridges
 
-Import `registerThreeGame` from `flowstride/dist/game/three-bridge.js` in the game
-bundle. Register the live scene, camera, canvas, the application's own Vector3
-and Raycaster constructors, and an optional objects map keyed by stable IDs.
-Alternatively, assign `userData.flowstrideId` to scene objects. Optional local
-pick points use `userData.flowstridePickPoint: [x, y, z]`.
+For a generic browser game, import `registerGame` from `flowstride/dist/game/bridge.js`. Supply `readState` and optional test-only fixtures.
 
-The bridge projects the live object and raycasts the live scene; hidden,
-occluded, off-screen, covered or non-pickable objects fail explicitly. It creates
-no renderer or animation loop. Dispose the bridge when the scene is replaced.
+For Three.js, import `registerThreeGame` from `flowstride/dist/game/three-bridge.js`. Register the live scene, camera, canvas, your application's `Vector3` and `Raycaster` constructors, and an optional map of stable object IDs. Alternatively, assign `userData.flowstrideId` to scene objects. Optional local pick points use `userData.flowstridePickPoint: [x, y, z]`.
 
-Optional `readState` provides observable state. `fixtures` are available only
-when the application explicitly registers with `testMode: true`; use that
-setting in dedicated test builds, never public production builds. Naija Throne
-still defines campaign-specific fixtures/rules, using these supported APIs.
+The bridge projects and raycasts the live scene. Hidden, occluded, off-screen, covered or non-pickable objects fail explicitly. It creates no renderer or animation loop. Dispose the bridge when replacing the scene.
 
-Custom plugins now receive `sdk.game`, `sdk.browser.page()`, and `sdk.run`
-(device, artifact directory and attach method), alongside the existing SDK.
-They need no global bridge or internal Flowstride class imports.
+Application fixtures are available only when explicitly registered with `testMode: true`. Enable this in dedicated test builds, never public production builds. Your application still defines its own rules, observable state and fixtures.
 
-## Validation before release
+Custom plugins receive `sdk.game`, `sdk.browser.page()` and `sdk.run`, including artifact attachment support, alongside the existing SDK.
 
-Build both packages and run `npm run test:native`. For the optional live Three.js
-fixture set `FLOWSTRIDE_THREE_BUILD` to a Three.js build directory containing
-three.module.js and three.core.js. OSS CLI handoff tests use
-`FLOWSTRIDE_PRO_SOURCE` pointing at the built Pro package.
+## Assertions and browser sessions
 
-Run the real archive install/handoff harness against both candidates, including
-missing/broken Pro and revoked-token fallback. Validate GitHub's Linux execution,
-real licensed download after local acceptance.
-No push, npm publication, Cloud archive replacement or Naija Throne migration
-is performed by building these candidates.
+```text
+flow.expect attribute "#order" "data-state" "approved";
+flow.expect attribute "#order" "class" contains "selected";
+flow.save session "browser" persist;
+flow.use session "browser";
+```
 
-## Combined candidate behavior
+Attribute comparisons wait up to the configured timeout. Exact matching is case-sensitive; `contains` checks a substring. Missing attributes fail even when the expected value is empty.
 
-Node.js 22.12 or newer is required. Flow discovery is recursive; `.first.flow`
-files run before ordinary files. Reports identify nested flows by their relative
-paths, and same-named videos receive distinct filenames. A failed scenario skips
-its remaining steps and continues to later scenarios. `--bail` stops later work;
-Pro executes bail runs sequentially. `only.Scenario:` selects that file's focus
-scenario and report planning uses the same selection.
+Sessions capture cookies, local storage, session storage and the current HTTP(S) storage origin. Session storage is restored immediately on the matching origin or before its first matching navigation. It is not seeded into unrelated origins. The initial seed is then removed so later application changes and reloads are preserved.
 
-Configuration, plugin, environment, upload, vault and output paths must stay
-inside the project, including resolved symlinks. Move shared fixtures into the
-project rather than referring to external files. `FLOWSTRIDE_API_URL` takes
-precedence over `NEXTJS_WEBHOOK_URL`; the legacy completion suffix is normalized.
-Managed runner commands remain retired.
+Existing cookie/local-storage snapshots remain compatible. Older snapshots with session storage but no origin use the current application origin or configured `baseUrl`; open the application first or set `baseUrl` if neither is available. Restoration merges saved keys into storage. This is a single-origin storage snapshot.
 
-Logs redact credential fields, known generated secrets and signed capabilities.
-Redaction cannot guarantee removal of arbitrary application data or visible
-secrets in screenshots/videos. Review artifact access and test data accordingly.
+## Interactive history and debugging
 
-The Pro installer rejects unsafe or incomplete archives, downloads above 32 MiB,
-and checksum mismatches. Older Cloud servers without checksum headers remain
-compatible and emit a warning; `FLOWSTRIDE_PRO_SHA256` can pin an expected digest.
-On failed npm installation the previous Pro directory and CLI launchers are
-restored. This is not a transaction over every project dependency npm may alter;
-use a disposable project for candidate acceptance.
+Each completed flow tab restores its own last captured screen. Selecting an earlier step remembers a separate history cursor for that file. Flows without screenshots show an empty state. New runs clear previous screens and cursors.
 
-## Dashboard tab history
+The local cURL preview remains `[REDACTED]`. Copy uses the original captured request held in interactive debugger memory. Already-redacted historical data cannot be recovered. CI and Cloud reports retain redaction.
 
-Completed test tabs restore that file's last captured step by default. Selecting
-an earlier step remembers its history cursor separately for each file. A sidebar
-step also selects the owning tab. Return to Live applies only to the selected
-file, and a new suite/rerun clears old cursors and screens. Runner console and
-network panels show the selected file's records; the full Logs view retains
-suite-wide history. Flows/steps without screenshots show an explicit empty
-state rather than another flow's screen.
-
-Run `npm run test:dashboard:unit` for the Zustand store/history unit tests and
-`npm run test:dashboard` for those tests plus the real Chromium dashboard
-regression. The browser regression runs real local browser flows, then replays
-their worker events over WebSocket into the built dashboard. It also supplies
-explicit API-only/background-event fixtures. No live Cloud is required.
-
-### Local cURL debugging
-
-The interactive local dashboard keeps its cURL preview [REDACTED]. Copy raw cURL
-uses the original request held separately in local memory, including its headers
-and body. Other log fields stay redacted. Native CI and Cloud reporting continue redacting cURL and
-credentials. Raw cURL is not restored for already-redacted historical runs.
-The interactive runner binds to 127.0.0.1 and restricts HTTP Host/Origin and
-WebSocket Origin to its own loopback address and port. Raw commands remain in
-local debugger memory and IPC; they are not written to CI or Cloud reports.
+Review artifact access and test data: credential redaction does not remove every possible application secret, and screenshots or videos can show sensitive information.

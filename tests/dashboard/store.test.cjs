@@ -21,3 +21,13 @@ const {flowStep,lastCapturedStep,logsForFile}=helper.exports;
 test('snapshot lookup rejects another qualified file and never searches the whole suite for a raw ID',()=>{const scenarios=store.getState().testScenarios;assert.equal(flowStep(scenarios,A,`${B}:::${first}`),undefined);assert.equal(flowStep(scenarios,'',first),undefined);assert.equal(flowStep(scenarios,A,first).screenshot,A+'-first');});
 test('default captured step skips later steps without evidence and never borrows from a different flow',()=>{const s=store.getState();s.addStep({fileName:A,id:'no-screen',status:'passed'});assert.equal(lastCapturedStep(store.getState().testScenarios,A).screenshot,A+'-last');assert.equal(lastCapturedStep(store.getState().testScenarios,API),undefined);});
 test('runner log filtering preserves only exact file ownership and order; global history remains available separately',()=>{const logs=[{fileName:A,summary:'first'},{fileName:B,summary:'other'},{fileName:A,summary:'last'},{summary:'global'}];assert.deepEqual(logsForFile(logs,A).map(log=>log.summary),['first','last']);assert.equal(logsForFile(logs,'missing.flow').length,0);assert.equal(logsForFile(logs,'').length,4);});
+
+test('attempt history preserves each screenshot/profile while the latest attempt determines status',()=>{
+ const s=store.getState();s.updateStepStatus(first,'failed','failed-shot',A,{attempt:1,profile:'customer',domSnapshot:'attempt-one.dom.html'});s.updateStepStatus(first,'passed','passed-shot',A,{attempt:2,profile:'admin',domSnapshot:'attempt-two.dom.html'});
+ const step=flowStep(store.getState().testScenarios,A,first);assert.equal(step.status,'passed');assert.equal(step.screenshot,'passed-shot');assert.equal(step.attempt,2);assert.equal(step.profile,'admin');assert.equal(step.attemptHistory.find(item=>item.attempt===1).screenshot,'failed-shot');assert.equal(step.attemptHistory.find(item=>item.attempt===1).domSnapshot,'attempt-one.dom.html');assert.equal(step.attemptHistory.find(item=>item.attempt===2).profile,'admin');
+ s.setActiveTestFile(B);s.setActiveTestFile(A);assert.equal(flowStep(store.getState().testScenarios,A,first).attemptHistory.length,2);
+});
+
+ test('verified browser metadata belongs to each file and survives completion, but resets for a new suite',()=>{
+  const s=store.getState();s.setActiveTestFile(A);s.setBrowserInfo(A,{engine:'firefox',version:'1',headless:true});s.setBrowserInfo(B,{engine:'webkit',version:'2',headless:false});assert.equal(store.getState().activeTestFile,A);s.stopExecution();assert.equal(store.getState().browserInfo[A].engine,'firefox');s.setActiveTestFile(B);assert.equal(store.getState().browserInfo[B].headless,false);s.startExecution();assert.deepEqual(store.getState().browserInfo,{});
+ });

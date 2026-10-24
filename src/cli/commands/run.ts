@@ -1,3 +1,4 @@
+import { needsNativeBrowserProtocol } from '../../native/compatibility';
 import { projectPath } from '../../utils/projectPaths';
 import { loadNativeConfig, isCIEnvironment } from '../../ci/config';
 import { runNativeCI } from '../../ci/runtime';
@@ -140,6 +141,7 @@ export async function runAction(
       const proOrchModule = await import(pathToFileURL(proOrchPath).href);
 
       if (config.ci && proOrchModule.FlowOrchestrator.nativeCIProtocol !== 1) throw new Error('Installed Pro engine does not support native CI protocol 1; install the matching Pro candidate.');
+      if (needsNativeBrowserProtocol(resolvedPath, config) && (proWorkerModule.FlowWorker.nativeBrowserProtocol !== 2 || proOrchModule.FlowOrchestrator.nativeBrowserProtocol !== 2)) throw new Error('Installed Cloud engine does not support these native browser capabilities. Install the matching Cloud archive; this run will use OS fallback.');
       ActiveFlowWorker = proWorkerModule.FlowWorker;
       ActiveFlowOrchestrator = proOrchModule.FlowOrchestrator;
       engineMode = "Enterprise (Pro)";

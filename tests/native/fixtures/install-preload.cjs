@@ -24,7 +24,7 @@ const deps = {
   '@/models/Workspace': { findById: async id => id === workspaceId ? { _id: workspaceId } : null },
   '@aws-sdk/client-s3': { S3Client: class {}, GetObjectCommand: class { constructor(input) { this.input = input; } } },
   '@aws-sdk/s3-request-presigner': { getSignedUrl: async (_client, command, options) => {
-    if (command.input.Bucket !== 'flowstride-engine-vault' || command.input.Key !== 'flowstride-pro-1.0.14.tgz' || options.expiresIn !== 60) throw new Error('Unexpected archive reference');
+    if (command.input.Bucket !== 'flowstride-engine-vault' || command.input.Key !== 'flowstride-pro-1.0.15.tgz' || options.expiresIn !== 60) throw new Error('Unexpected archive reference');
     trace({ type: 'storage-reference', key: command.input.Key });
     return 'https://storage.example.invalid/private-pro.tgz';
   } },

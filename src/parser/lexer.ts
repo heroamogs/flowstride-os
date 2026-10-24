@@ -65,11 +65,17 @@ export class Lexer {
         let jsonStr = "";
         let depth = 0;
         let startLine = this.line;
+        let inString = false, escaped = false;
 
         while (this.position < this.input.length) {
           const c = this.input[this.position];
-          if (c === "{") depth++;
-          if (c === "}") depth--;
+          if (inString) {
+            if (escaped) escaped = false;
+            else if (c === "\\") escaped = true;
+            else if (c === '"') inString = false;
+          } else if (c === '"') inString = true;
+          else if (c === "{") depth++;
+          else if (c === "}") depth--;
           if (c === "\n") this.line++;
 
           jsonStr += c;
@@ -276,7 +282,7 @@ export class Lexer {
               line: this.line,
             });
             continue;
-          } else if (ident.includes(".") && !lowerIdent.startsWith("flow.")) {
+          } else if (/^flow\.(browser|assert|network|download|clock|stub|trace|har|a11y|component)\.[a-z]+$/i.test(ident) || (ident.includes(".") && !lowerIdent.startsWith("flow."))) {
             tokens.push({
               type: TokenType.ALIAS_COMMAND,
               value: ident,
@@ -463,7 +469,7 @@ export class Lexer {
             value: ident,
             line: this.line,
           });
-        } else if (ident.includes(".") && !lowerIdent.startsWith("flow.")) {
+        } else if (/^flow\.(browser|assert|network|download|clock|stub|trace|har|a11y|component)\.[a-z]+$/i.test(ident) || (ident.includes(".") && !lowerIdent.startsWith("flow."))) {
           tokens.push({
             type: TokenType.ALIAS_COMMAND,
             value: ident,

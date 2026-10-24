@@ -54,6 +54,10 @@ export const connectToRunner = () => {
           store.addLog(data.payload);
           break;
 
+        case 'BROWSER_INFO':
+          store.setBrowserInfo(data.payload.fileName, data.payload);
+          break;
+
         case "BROWSER_FRAME":
           store.setBrowserFrame(
             data.payload.fileName || "General",
@@ -77,6 +81,7 @@ export const connectToRunner = () => {
             status,
             data.payload.screenshot,
             data.payload.fileName,
+            { attempt: data.payload.attempt, profile: data.payload.profile, domSnapshot: data.payload.domSnapshot },
           );
           break;
 
@@ -89,10 +94,7 @@ export const connectToRunner = () => {
           break;
 
         case "REPLAY_RES":
-          store.setReplayResponse(
-            data.payload.responseBody,
-            data.payload.status,
-          );
+          store.setReplayResponse(data.payload.responseBody, data.payload.status, data.payload.error, data.payload.requestId);
           break;
 
         case "EXPORT_PDF_RES": {

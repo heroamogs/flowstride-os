@@ -29,6 +29,8 @@ export interface ReplayState {
   response: any;
   status: number | null;
   isLoading: boolean;
+  error: string | null;
+  requestId: string | null;
 }
 
 export interface TestStep {
@@ -38,6 +40,10 @@ export interface TestStep {
   command: string;
   status: "running" | "pass" | "passed" | "success" | "failed" | "pending";
   screenshot?: string;
+  profile?: string;
+  attempt?: number;
+  domSnapshot?: string;
+  attemptHistory?: { attempt: number; status: string; screenshot?: string; domSnapshot?: string; profile?: string }[];
 }
 
 export interface TestScenario {
@@ -48,6 +54,8 @@ export interface TestScenario {
 }
 
 interface AppState {
+  browserInfo: Record<string, { engine: string; version: string; headless: boolean }>;
+  setBrowserInfo: (fileName: string, info: { engine: string; version: string; headless: boolean }) => void;
   isRunning: boolean;
   timer: number;
   completedSteps: string[];
@@ -92,16 +100,19 @@ interface AppState {
     status: string,
     screenshot?: string,
     fileName?: string,
+    metadata?: { attempt?: number; profile?: string; domSnapshot?: string },
   ) => void;
   addNetworkLog: (payload: any) => void;
   addAssertion: (payload: any) => void;
   setSession: (sessionName: string) => void;
 
   updateReplay: (field: keyof ReplayState, value: any) => void;
-  setReplayResponse: (response: any, status: number) => void;
+  setReplayResponse: (response: any, status: number | null, error?: string | null, requestId?: string) => void;
 }
 
 export const useFlowStore = create<AppState>((set) => ({
+  browserInfo: {},
+  setBrowserInfo: (fileName, info) => set((state) => ({ activeTestFile: state.activeTestFile || fileName, browserInfo: { ...state.browserInfo, [fileName]: info } })),
   isRunning: false,
   timer: 0,
   completedSteps: [],
@@ -151,21 +162,16 @@ export const useFlowStore = create<AppState>((set) => ({
       const log = state.logs.find((l) => l.id === id);
       if (log && (log.type === "REST" || log.type === "GRAPHQL")) {
         const details = log.details || {};
+        const original = details.rawReplayRequest && typeof details.rawReplayRequest === 'object' ? details.rawReplayRequest : undefined;
         return {
           selectedLogId: id,
           activeReplay: {
-            method: details.method || "GET",
-            url: details.url || "",
-            headers: details.requestHeaders
-              ? JSON.stringify(details.requestHeaders, null, 2)
-              : "{\n  \n}",
-            body:
-              typeof details.requestBody === "object"
-                ? JSON.stringify(details.requestBody, null, 2)
-                : details.requestBody || "",
-            response: null,
-            status: null,
-            isLoading: false,
+            method: original?.method || details.method || 'GET',
+            url: original?.url || details.url || '',
+            headers: JSON.stringify(original?.headers || details.requestHeaders || {}, null, 2),
+            body: original ? original.body ?? '' : typeof details.requestBody === 'object'
+              ? JSON.stringify(details.requestBody, null, 2) : details.requestBody || '',
+            response: null, status: null, error: null, requestId: null, isLoading: false,
           },
         };
       }
@@ -197,6 +203,7 @@ export const useFlowStore = create<AppState>((set) => ({
       assertions: [],
       testScenarios: [],
       browserFrames: {},
+      browserInfo: {},
       currentUrls: {},
       pageTitles: {},
       selectedLogId: null,
@@ -313,7 +320,7 @@ export const useFlowStore = create<AppState>((set) => ({
       return { testScenarios: updatedScenarios };
     }),
 
-  updateStepStatus: (id, status, screenshot, fileName) =>
+  updateStepStatus: (id, status, screenshot, fileName, metadata) =>
     set((state) => {
       if (!fileName) return state;
 
@@ -328,10 +335,19 @@ export const useFlowStore = create<AppState>((set) => ({
         updated = true;
 
         const updatedSteps = [...scenario.steps];
+        const previous = updatedSteps[stepIndex];
+        const attempt = metadata?.attempt || previous.attempt || 1;
+        const history = [...(previous.attemptHistory || [])];
+        const evidence = { attempt, status, screenshot, domSnapshot: metadata?.domSnapshot, profile: metadata?.profile };
+        const historyIndex = history.findIndex(item => item.attempt === attempt);
+        if (historyIndex === -1) history.push(evidence); else history[historyIndex] = { ...history[historyIndex], ...evidence, screenshot: screenshot || history[historyIndex].screenshot };
         updatedSteps[stepIndex] = {
           ...updatedSteps[stepIndex],
           status: (status as any) || "pending",
-          screenshot: screenshot || updatedSteps[stepIndex].screenshot,
+          screenshot: screenshot || (attempt === (previous.attempt || 1) ? previous.screenshot : undefined),
+          attempt, profile: metadata?.profile || previous.profile,
+          domSnapshot: metadata?.domSnapshot || (attempt === (previous.attempt || 1) ? previous.domSnapshot : undefined),
+          attemptHistory: history,
         };
 
         const hasFailed = updatedSteps.some((s) => s.status === "failed");
@@ -386,10 +402,10 @@ export const useFlowStore = create<AppState>((set) => ({
         ? { ...state.activeReplay, [field]: value }
         : null,
     })),
-  setReplayResponse: (response, status) =>
+  setReplayResponse: (response, status, error = null, requestId) =>
     set((state) => ({
-      activeReplay: state.activeReplay
-        ? { ...state.activeReplay, response, status, isLoading: false }
-        : null,
+      activeReplay: state.activeReplay && (!requestId || requestId === state.activeReplay.requestId)
+        ? { ...state.activeReplay, response, status, error, isLoading: false }
+        : state.activeReplay,
     })),
 }));

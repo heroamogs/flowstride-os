@@ -1,3 +1,4 @@
+import { executionPlan } from './distribution';
 import { createHash } from 'node:crypto';
 import { discoverFlows, flowIdentity, videoFileName, selectedFeatures } from '../utils/projectPaths';
 import fs from 'node:fs';
@@ -21,6 +22,9 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
   fs.mkdirSync(artifactRoot, { recursive: true });
   const directory = fs.mkdtempSync(path.join(artifactRoot, 'run-'));
   config.artifactsDir = directory;
+  const plan = executionPlan(target, config);
+  const browsers = new Map<string, any>();
+  const attempts: any[] = []; const attemptSteps = new Map<string, any[]>(); const timings: Record<string,number> = {};
   const steps = new Map<string, any>(); const completed = new Set<string>(); const errors: string[] = [];
   const planned = new Map<string, any>(); let bailed = false;
   let expected = 0; let files: string[] = []; let server: ChildProcess | undefined; let interrupted = false;
@@ -28,7 +32,12 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
   const event = (data: any) => {
     if (!data?.payload) return;
     const p = data.payload;
+    if (data.type === 'BROWSER_INFO') browsers.set(p.fileName, { ...p });
     if (data.type === 'BAIL') bailed = true;
+    if (data.type === 'SCENARIO_ATTEMPT') attemptSteps.set(p.fileName, []);
+    if (data.type === 'SCENARIO_RESULT') attempts.push({ ...p, steps: [...(attemptSteps.get(p.fileName) || [])] });
+    if (data.type === 'FILE_COMPLETE' || data.type === 'FILE_FAILED') timings[p.fileName] = p.duration;
+    if (data.type === 'STEP_UPDATE') attemptSteps.get(p.fileName)?.push({ ...p, screenshot: undefined });
     if (data.type === 'LOG_EVENT' && p.status === 'error') {
       const active = [...steps.values()].reverse().find(step => step.fileName === p.fileName && step.status === 'running');
       if (active) active.error = p.details?.rawError || p.summary;
@@ -53,9 +62,9 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
   if (orchestrator.nativeEventProtocol !== 1) worker.on('worker_event', event);
   process.on('SIGINT', interrupt); process.on('SIGTERM', interrupt);
   try {
-    files = discoverFlows(target, config.projectRoot || process.cwd());
+    files = plan.files;
     config.flowRoot = fs.statSync(target).isDirectory() ? target : path.dirname(target);
-    if (!files.length) throw new Error('No .flow tests found.');
+    if (!plan.allFiles.length) throw new Error('No .flow tests found.');
     for (const file of files) {
       const features = selectedFeatures(new Parser(new Lexer(fs.readFileSync(file, 'utf8')).tokenise()).parse());
       for (const feature of features) for (const scenario of feature.scenarios) for (const step of scenario.steps) {
@@ -64,7 +73,7 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
       }
       expected += features.reduce((n: number, feature: any) => n + feature.scenarios.reduce((m: number, scenario: any) => m + scenario.steps.length, 0), 0);
     }
-    if (!expected) throw new Error('No executable test steps found.');
+    if (files.length && !expected) throw new Error('No executable test steps found.');
     if (config.webServer) {
       const settings = config.webServer;
       const probe = async () => { try { return (await fetch(settings.url, { signal: AbortSignal.timeout(1000) })).ok; } catch { return false; } };
@@ -110,8 +119,9 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
   if (terminal.length > expected) errors.push('Engine produced an unexpected step count.');
   const metrics = { total: expected, passed: results.filter(s => s.status === 'passed').length,
     failed: results.filter(s => s.status === 'failed').length, skipped: results.filter(s => ['skipped','not_tested'].includes(s.status)).length, incomplete };
-  const result: NativeRunResult & { cloudSync?: unknown } = { cloudSync: config.cloudSyncResult, protocol: 1, engine, status: interrupted ? 'interrupted' : errors.length || metrics.failed || incomplete ? 'failed' : 'passed',
-    duration: Date.now() - started, artifactsDir: directory, files: files.map(file => flowIdentity(file, config.flowRoot)), steps: results, errors, metrics };
+  if (config.failOnFlaky && attempts.some(attempt => attempt.flaky)) errors.push('Flaky scenarios are configured to fail CI.');
+  const result: NativeRunResult & { cloudSync?: unknown; attempts?: any[]; timings?: Record<string,number>; distribution?: unknown } = { cloudSync: config.cloudSyncResult, browser: config.browser || 'chromium', browsers: [...browsers.values()], protocol: 1, engine, status: interrupted ? 'interrupted' : errors.length || metrics.failed || incomplete ? 'failed' : 'passed',
+    duration: Date.now() - started, artifactsDir: directory, files: files.map(file => flowIdentity(file, config.flowRoot)), steps: results, errors, metrics, attempts, timings, distribution: { ...plan, files: undefined, flowRoot: undefined } } as any;
   // Existing workers finalize videos into these locations. Copy only run files,
   // never the project directory or credentials.
   if (config.recordVideo !== false) for (const file of files) {
@@ -124,6 +134,7 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
     }
   }
   config.artifactsDir = artifactRoot;
+  fs.writeFileSync(path.join(artifactRoot, 'timings.json'), JSON.stringify(timings, null, 2));
   fs.writeFileSync(path.join(artifactRoot, 'summary.json'), JSON.stringify(result, null, 2));
   const cases = results.map(step => `<testcase classname="${xml(step.fileName)}" name="${xml(step.description || step.id)}">${step.status === 'failed' ? `<failure message="${xml(step.error || 'Test step failed')}"/>` : ['skipped','not_tested'].includes(step.status) ? '<skipped/>' : ''}</testcase>`);
   for (const error of errors) cases.push(`<testcase name="execution"><error message="${xml(error)}"/></testcase>`);

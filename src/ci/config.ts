@@ -1,3 +1,5 @@
+import { parseShard } from './distribution';
+import { validateContextOptions } from '../native/validation';
 import { projectPath } from '../utils/projectPaths';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,13 +16,19 @@ export function loadNativeConfig(root: string, options: Record<string, any>): Fl
     input = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Flowstride configuration must be an object.');
   } else if (options.config) throw new Error(`Configuration not found: ${file}`);
-  const config: any = { ...input, projectRoot: path.resolve(root), timeout: input.timeout ?? 30000, headless: input.headless ?? true,
+  const config: any = { ...input, browser: options.browser ?? input.browser ?? "chromium", retries: input.retries ?? 0, shard: options.shard ?? input.shard, shardHistory: options.shardHistory ?? input.shardHistory, updateBaselines: !!options.updateBaselines, projectRoot: path.resolve(root), timeout: input.timeout ?? 30000, headless: input.headless ?? true,
     ci: !!options.ci || isCIEnvironment(), bail: options.bail || input.bail || false, device: options.device ?? input.device ?? 'desktop',
     artifactsDir: input.artifactsDir ?? 'flowstride-artifacts', testDir: input.testDir ?? 'flows',
     defaultDialogBehavior: input.defaultDialogBehavior ?? 'dismiss',
     recordVideo: input.recordVideo ?? true, browserErrors: input.browserErrors ?? 'fail',
     isCloudSyncActive: options.isCloudSyncActive ?? false, machineToken: options.machineToken ?? null,
     workspaceId: options.workspaceId ?? null, manifest: options.manifest ?? null };
+  if (!['chromium','firefox','webkit'].includes(config.browser)) throw new Error('browser must be chromium, firefox, or webkit.');
+  config.browserOptions = validateContextOptions(input.browserOptions, config.browser, root);
+  if (!Number.isSafeInteger(config.retries) || config.retries < 0 || config.retries > 10) throw new Error('retries must be an integer from 0 to 10.');
+  for (const key of ['trace','har','domSnapshots','failOnFlaky']) if (config[key] !== undefined && typeof config[key] !== 'boolean') throw new Error(`${key} must be boolean.`);
+  parseShard(config.shard);
+  if (config.ci && config.updateBaselines) throw new Error('Baseline updates are not allowed in CI.');
   if (config.ci && input.cloudSync !== true) config.isCloudSyncActive = false;
   if (options.headless || config.ci) config.headless = true;
   else if (options.headed) config.headless = false;
