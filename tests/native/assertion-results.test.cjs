@@ -15,7 +15,133 @@ test('parse failure returns false, emits FILE_FAILED, and never prints suite suc
 test('OS/Cloud orchestrator propagates a worker failure even when no STEP_UPDATE exists',async()=>{const {EventEmitter}=require('node:events');const dir=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'flowstride-empty-failure-'))),file=path.join(dir,'bad.flow');fs.writeFileSync(file,'Feature: Empty');const worker=new EventEmitter();worker.runBatch=async()=>false;worker.abort=()=>{};const config={ci:true,projectRoot:fs.realpathSync(dir),flowRoot:fs.realpathSync(dir)};const orch=new FlowOrchestrator(worker,1,config);try{assert.equal(await orch.start(file),false);}finally{await orch.close?.();fs.rmSync(dir,{recursive:true,force:true});}});
 test('CI retains nested checks without inflating metrics and escapes JUnit output',async()=>{const dir=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'flowstride-check-ci-'))),file=path.join(dir,'one.flow');fs.writeFileSync(file,'Feature: Checks\nScenario: One\nGiven "Setup"\nWhen "Action"\nflow.open "/";\nThen "Done"\nflow.expect status "200";');const worker={on(){},off(){},abort(){}};const config={ci:true,projectRoot:dir,artifactsDir:path.join(dir,'evidence'),recordVideo:false,timeout:1000,browserErrors:'fail'};const r=result();r.checks[0].label='<script>unsafe</script>';const orch={async start(){for(const [type,payload] of [['STEP_ADD',{id:'one',fileName:'one.flow',description:'Check',status:'running'}],['STEP_UPDATE',{id:'one',fileName:'one.flow',status:'failed',assertion:r,error:'condition failed'}],['FILE_COMPLETE',{fileName:'one.flow'}]])config.onRunEvent({type,payload});return false;},close:async()=>{}};try{const summary=await runNativeCI(worker,orch,file,config,'test');assert.equal(summary.status,'failed');assert.equal(summary.metrics.failed,1);assert.equal(summary.steps[0].assertion.checks[0].status,'passed');const xml=fs.readFileSync(path.join(dir,'evidence/junit.xml'),'utf8');assert.match(xml,/<system-out>/);assert(xml.includes('&lt;script&gt;'));assert(!xml.includes('<script>'));}finally{fs.rmSync(dir,{recursive:true,force:true});}});
 
-test('And assertions also work after Then while state-changing commands remain prohibited',()=>{const source='Feature: Assertions\nScenario: Complete\nGiven "Setup"\nWhen "Action"\nflow.open "/";\nThen "First"\nflow.expect visible "Ready";\nAnd "More"\nflow.assert.that {"selector":"h1","condition":"visible"};';assert.equal(new Parser(new Lexer(source).tokenise()).parse()[0].scenarios[0].steps.at(-1).action,'native');assert.throws(()=>new Parser(new Lexer(source.replace('flow.assert.that {"selector":"h1","condition":"visible"};','flow.browser.create {"name":"admin"};')).tokenise()).parse(),/And blocks/);});
+const terminalScenario = [
+  'Feature: Terminal lock',
+  'Scenario: Complete',
+  'Given "Setup"',
+  'When "Action"',
+  'flow.open "/";',
+  'Then "Final checks"',
+  'flow.expect visible "Ready";',
+].join('\n') + '\n';
+const parseTerminalFlow = source => new Parser(new Lexer(source).tokenise()).parse();
+
+for (const block of ['And', 'stop.And', 'Then', 'Given', 'When', 'stop.Then', 'stop.Given', 'stop.When']) {
+  test(`terminal Then rejects a following ${block} block at its source line`, () => {
+    assert.throws(
+      () => parseTerminalFlow(terminalScenario + `${block} "Another block"\nflow.expect visible "Later";`),
+      error => {
+        assert.match(error.message, /^Line 8: Terminal Lock Violation\. No steps allowed after Then\.$/);
+        return true;
+      },
+    );
+  });
+}
+
+test('terminal Then rejects an empty following And block', () => {
+  assert.throws(() => parseTerminalFlow(terminalScenario + 'And "Empty follow-up"'), /Terminal Lock Violation/);
+});
+
+for (const method of ['assert.that', 'network.expect', 'download.expect', 'stub.expect', 'a11y.scan', 'a11y.match']) {
+  test(`terminal lock rejects post-Then And containing ${method}`, () => {
+    assert.throws(
+      () => parseTerminalFlow(terminalScenario + `And "More checks"\nflow.${method} {};`),
+      /Terminal Lock Violation/,
+    );
+  });
+
+  test(`terminal lock preserves ${method} under intermediate And and inside final Then`, () => {
+    const source = [
+      'Feature: Native assertions',
+      'Scenario: Complete',
+      'Given "Setup"',
+      'When "Action"',
+      'flow.open "/";',
+      'And "Intermediate check"',
+      `flow.${method} {};`,
+      'Then "Final checks and action"',
+      `flow.${method} {};`,
+      'flow.expect visible "Ready";',
+      'flow.click button "Logout";',
+    ].join('\n');
+    const scenario = parseTerminalFlow(source)[0].scenarios[0];
+    assert.deepEqual(scenario.steps.map(step => step.action), ['open', 'native', 'native', 'expect', 'click']);
+    assert.equal(scenario.steps[1].blockDescription, 'And "Intermediate check"');
+    assert(scenario.steps.slice(2).every(step => step.blockDescription === 'Then "Final checks and action"'));
+  });
+}
+
+for (const prefix of [
+  'Feature: First feature\nFeature: Another feature\n',
+  'Feature: First feature\nlet helper = "plugins/helper.cjs";\nFeature: Another feature\n',
+]) {
+  test(`a test file rejects duplicate Feature headings before its first Scenario: ${prefix.split('\n').length - 1} lines`, () => {
+    const scenario = terminalScenario.slice(terminalScenario.indexOf('Scenario:'));
+    assert.throws(() => parseTerminalFlow(prefix + scenario), /only one Feature/);
+  });
+}
+
+for (const prefix of ['flow.open "/";\n', 'let helper = "plugins/helper.cjs";\n']) {
+  test(`Feature must be the first declaration, before ${prefix.trim()}`, () => {
+    assert.throws(() => parseTerminalFlow(prefix + terminalScenario), /Feature must be the first declaration/);
+  });
+}
+
+test('comments and blank lines can precede the single top-level Feature', () => {
+  assert.equal(parseTerminalFlow('// File description\n\n/* Header comment */\n' + terminalScenario)[0].name, 'Terminal lock');
+});
+
+test('the single Feature can declare shared aliases before its Scenarios', () => {
+  const source = terminalScenario.replace('Feature: Terminal lock\n', 'Feature: Terminal lock\nlet helper = "plugins/helper.cjs";\n');
+  assert.equal(parseTerminalFlow(source)[0].declarations[0].alias, 'helper');
+});
+
+test('terminal lock rejects an alias declaration after Then', () => {
+  assert.throws(
+    () => parseTerminalFlow(terminalScenario + 'let helper = "plugins/helper.cjs";'),
+    /Line 8: Terminal Lock Violation/,
+  );
+});
+
+test('terminal lock rejects another Feature after Then', () => {
+  assert.throws(
+    () => parseTerminalFlow(terminalScenario + [
+      'Feature: Another feature',
+      'Scenario: Another journey',
+      'Given "Setup"',
+      'When "Action"',
+      'Then "Final result"',
+    ].join('\n')),
+    /Line 8: Terminal Lock Violation/,
+  );
+});
+
+test('a following Scenario can declare its own aliases after the terminal lock resets', () => {
+  const source = terminalScenario + [
+    'Scenario: Next journey',
+    'let helper = "plugins/helper.cjs";',
+    'Given "Another setup"',
+    'When "Another action"',
+    'flow.open "/next";',
+    'Then "Another result"',
+    'flow.expect visible "Next";',
+  ].join('\n');
+  const scenarios = parseTerminalFlow(source)[0].scenarios;
+  assert.equal(scenarios.length, 2);
+  assert.equal(scenarios[1].declarations[0].alias, 'helper');
+});
+
+test('terminal lock resets for the next scenario', () => {
+  const source = terminalScenario + [
+    'Scenario: Next journey',
+    'Given "Another setup"',
+    'When "Another action"',
+    'flow.open "/next";',
+    'Then "Another result"',
+    'flow.expect visible "Next";',
+  ].join('\n');
+  assert.equal(parseTerminalFlow(source)[0].scenarios.length, 2);
+});
 const {runtimeFailure}=require('../../dist/reporting/runtime_failure');
 for(const [action,payload,message] of [
  ['click',{selector:'#submit'},'locator.click: Timeout 100ms exceeded.\nCall log:\n - element is outside the viewport'],

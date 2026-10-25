@@ -47,6 +47,10 @@ export class Parser {
 
     let featureDeclarations: DeclarationNode[] = [];
 
+    if (!this.isAtEnd() && this.peek().type !== TokenType.FEATURE) {
+      throw new Error(`Line ${this.peek().line}: Scope Violation. Feature must be the first declaration in a test file.`);
+    }
+
     while (!this.isAtEnd()) {
       const token = this.peek();
 
@@ -59,14 +63,8 @@ export class Parser {
           featureDeclarations.push(this.parseDeclaration());
         }
       } else if (token.type === TokenType.FEATURE) {
-        if (currentFeatureName && currentScenarios.length > 0) {
-          features.push({
-            name: currentFeatureName,
-            declarations: featureDeclarations,
-            scenarios: currentScenarios,
-          });
-          currentScenarios = [];
-          featureDeclarations = [];
+        if (currentFeatureName !== null) {
+          throw new Error(`Line ${token.line}: A test file can contain only one Feature declaration.`);
         }
         this.advance();
         currentFeatureName = this.consume(
@@ -153,11 +151,13 @@ export class Parser {
       const token = this.peek();
 
       if (token.type === TokenType.LET) {
+        if (isLocked)
+          throw new Error(`Line ${token.line}: Terminal Lock Violation. No steps allowed after Then.`);
         declarations.push(this.parseDeclaration());
       } else if (token.type === TokenType.BLOCK) {
-        if (isLocked && token.value.toLowerCase().replace(/^stop\./, '') !== 'and')
+        if (isLocked)
           throw new Error(
-            `Line ${token.line}: Terminal Lock Violation. Only assertion And blocks are allowed after Then.`,
+            `Line ${token.line}: Terminal Lock Violation. No steps allowed after Then.`,
           );
 
         const blockToken = this.advance();
@@ -216,7 +216,7 @@ export class Parser {
         token.type === TokenType.COMMAND ||
         token.type === TokenType.ALIAS_COMMAND
       ) {
-        if (isLocked && currentBlockType !== "then" && currentBlockType !== "and") {
+        if (isLocked && currentBlockType !== "then") {
           throw new Error(`Line ${token.line}: Terminal Lock Violation.`);
         }
         const step = this.parseCommand();
@@ -239,6 +239,10 @@ export class Parser {
           `Line ${token.line}: Unexpected trailing token "${token.value}". Make sure your command arguments are properly formatted without stray words.`,
         );
       }
+    }
+
+    if (isLocked && !this.isAtEnd() && this.peek().type === TokenType.FEATURE) {
+      throw new Error(`Line ${this.peek().line}: Terminal Lock Violation. No steps allowed after Then.`);
     }
 
     if (!hasGiven || !hasWhen || !hasThen) {
