@@ -1,0 +1,17 @@
+Feature: Table coordinates and exact cell actions
+
+  Scenario: Select a cell and a repeated row action
+    Given "The unfiltered orders table is open"
+      flow.open "/orders";
+
+    When "Select the first cell of the second data row"
+      flow.click "table[0] tr[2] td[0]";
+
+    And "The second order is selected"
+      flow.expect text "Order FS-102";
+
+    When "Click the button in the first data row's action cell"
+      flow.click button "View" inside "table[0] tr[1] td[3]";
+
+    Then "The first order is selected"
+      flow.expect text "Order FS-101";

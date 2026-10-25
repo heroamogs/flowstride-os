@@ -1,6 +1,6 @@
 {
   "name": "flowstride",
-  "version": "1.0.21",
+  "version": "1.0.22-local.3",
   "description": "An opensource flowfirst test automation framework",
   "workspaces": [
     "packages/flowstride_report"
@@ -12,7 +12,9 @@
     "src/ui/dist",
     "NATIVE_CI.md",
     "examples/native-game",
-    "NATIVE_BROWSER.md"
+    "NATIVE_BROWSER.md",
+    "NATIVE_WORKFLOWS.md",
+    "examples/native-workflows"
   ],
   "bin": {
     "flowstride": "dist/cli/index.js"
@@ -28,11 +30,12 @@
     "verify:candidate": "node scripts/verify-candidate.cjs",
     "test:dashboard:unit": "node --test tests/dashboard/store.test.cjs",
     "test:dashboard": "node --test --test-concurrency=1 tests/dashboard/*.test.cjs",
-    "test:unit": "node --test tests/native/core.test.cjs tests/native/combined.test.cjs tests/native/curl.test.cjs tests/native/upload.test.cjs tests/dashboard/store.test.cjs tests/native/replay.test.cjs tests/dashboard/replay.test.cjs tests/native/assertions-sessions.test.cjs tests/native/capabilities.test.cjs tests/native/browser-selection.unit.test.cjs",
-    "test:security": "node --test tests/manual-security.test.cjs tests/native/curl.test.cjs tests/native/combined.test.cjs tests/native/replay.test.cjs tests/native/assertions-sessions.test.cjs tests/native/capabilities.test.cjs tests/native/browser-selection.unit.test.cjs",
+    "test:unit": "node --test tests/native/core.test.cjs tests/native/combined.test.cjs tests/native/curl.test.cjs tests/native/upload.test.cjs tests/dashboard/store.test.cjs tests/native/replay.test.cjs tests/dashboard/replay.test.cjs tests/native/assertions-sessions.test.cjs tests/native/capabilities.test.cjs tests/native/browser-selection.unit.test.cjs tests/native/manual-boundary.test.cjs tests/native/storage-hover.test.cjs tests/native/plugin-runtime.test.cjs tests/native/runtime-assertions.test.cjs tests/native/runtime-api-refresh.test.cjs tests/dashboard/report-status.test.cjs tests/dashboard/manual-title.test.cjs tests/native/assertion-results.test.cjs tests/dashboard/assertion-results.test.cjs",
+    "test:security": "node --test tests/manual-security.test.cjs tests/native/curl.test.cjs tests/native/combined.test.cjs tests/native/replay.test.cjs tests/native/assertions-sessions.test.cjs tests/native/capabilities.test.cjs tests/native/browser-selection.unit.test.cjs tests/native/manual-boundary.test.cjs tests/native/storage-hover.test.cjs tests/native/plugin-runtime.test.cjs tests/native/runtime-assertions.test.cjs tests/native/runtime-api-refresh.test.cjs tests/dashboard/report-status.test.cjs tests/dashboard/manual-title.test.cjs tests/dashboard/manual-history.browser.test.cjs tests/native/assertion-results.test.cjs tests/dashboard/assertion-results.test.cjs",
     "test:replay": "node --test tests/native/replay.test.cjs tests/dashboard/replay.test.cjs tests/dashboard/curl.browser.test.cjs",
     "test:assertions-sessions": "node --test --test-concurrency=1 tests/native/assertions-sessions*.test.cjs",
-    "test:capabilities": "node --test --test-concurrency=1 tests/native/capabilities*.test.cjs"
+    "test:capabilities": "node --test --test-concurrency=1 tests/native/capabilities*.test.cjs",
+    "test:examples": "node --test --test-concurrency=1 tests/native/workflow-examples.test.cjs"
   },
   "keywords": [
     "automation",
@@ -67,7 +70,8 @@
     "undici": "^7.30.1",
     "vite": "8.3.5",
     "ws": "^8.22.0",
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "typescript": "5.9.3"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
@@ -75,8 +79,7 @@
     "@types/ws": "^8.18.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "three": "0.186.1",
-    "typescript": "^5.9.3"
+    "three": "0.186.1"
   },
   "optionalDependencies": {
     "@rolldown/binding-darwin-arm64": "^0.15.1"

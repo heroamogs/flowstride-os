@@ -1,0 +1,27 @@
+Feature: Generated and extracted variable reuse
+Scenario: Preserve one generated value across API and UI
+Given "Generate data once and extract the response"
+  flow.post "/api/echo" with reqBody;
+  """
+  {
+    "email": "$randomEmail@example.test",
+    "label": "{{env.EXAMPLE_LABEL}}"
+  }
+  """
+  flow.extract resBody "email" as "rememberedEmail";
+  flow.extract resBody "label" as global "sharedLabel";
+When "The generated value is reused in a second API request"
+  flow.post "/api/echo" with reqBody;
+  """
+  {
+    "email": "@rememberedEmail"
+  }
+  """
+And "Generation did not silently create another value"
+  flow.expect resBody "email" equals "@randomEmail@example.test";
+When "Reuse the extraction in a browser field"
+  flow.open "/reuse";
+  flow.type input "Selected value" "@rememberedEmail";
+  flow.click button "Apply value";
+Then "The browser received the exact value"
+  flow.expect text "Selected impossible@example.test";

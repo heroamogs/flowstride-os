@@ -24,7 +24,7 @@ const deps = {
   '@/models/Workspace': { findById: async id => id === workspaceId ? { _id: workspaceId } : null },
   '@aws-sdk/client-s3': { S3Client: class {}, GetObjectCommand: class { constructor(input) { this.input = input; } } },
   '@aws-sdk/s3-request-presigner': { getSignedUrl: async (_client, command, options) => {
-    if (command.input.Bucket !== 'flowstride-engine-vault' || command.input.Key !== 'flowstride-pro-1.0.15.tgz' || options.expiresIn !== 60) throw new Error('Unexpected archive reference');
+    if (command.input.Bucket !== 'flowstride-engine-vault' || command.input.Key !== 'flowstride-private-fixture.tgz' || options.expiresIn !== 60) throw new Error('Unexpected archive reference');
     trace({ type: 'storage-reference', key: command.input.Key });
     return 'https://storage.example.invalid/private-pro.tgz';
   } },
@@ -37,7 +37,7 @@ vm.runInNewContext(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
 }).outputText, {
   module: compiledModule, exports: compiledModule.exports,
   require(name) { if (!(name in deps)) throw new Error(`Unexpected download dependency: ${name}`); return deps[name]; },
-  process: { env: { DO_SPACES_KEY: 'test-key', DO_SPACES_SECRET: 'test-secret' } },
+  process: { env: { DO_SPACES_KEY: 'test-key', DO_SPACES_SECRET: 'test-secret', FLOWSTRIDE_PRO_OBJECT_KEY: 'flowstride-private-fixture.tgz' } },
   fetch: async url => {
     if (url !== 'https://storage.example.invalid/private-pro.tgz') throw new Error('Unexpected storage request');
     return new Response(fs.readFileSync(path.join(stage, 'pro.tgz')));

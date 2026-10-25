@@ -46,8 +46,16 @@ export const connectToRunner = () => {
           break;
         }
 
+        case 'SCENARIO_RESULT':
+          store.scenarioResult(data.payload);
+          break;
+
         case "RUN_COMPLETE":
-          store.stopExecution();
+          store.stopExecution(data.payload?.status);
+          break;
+
+        case "FILE_FAILED":
+          store.failFile(data.payload.fileName, data.payload.error || "File failed before completion.");
           break;
 
         case "LOG_EVENT":
@@ -81,7 +89,7 @@ export const connectToRunner = () => {
             status,
             data.payload.screenshot,
             data.payload.fileName,
-            { attempt: data.payload.attempt, profile: data.payload.profile, domSnapshot: data.payload.domSnapshot },
+            { attempt: data.payload.attempt, profile: data.payload.profile, domSnapshot: data.payload.domSnapshot, assertion:data.payload.assertion, error:data.payload.error, commandLabel:data.payload.commandLabel, sourceLine:data.payload.sourceLine },
           );
           break;
 

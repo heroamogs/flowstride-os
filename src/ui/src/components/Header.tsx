@@ -13,6 +13,7 @@ import { sendToRunner } from "../socket";
 export const Header = ({ isRightPanelOpen, onToggleRightPanel }: any) => {
   const {
     isRunning,
+    runStatus,
     timer,
     startExecution,
     stopExecution,
@@ -92,7 +93,7 @@ export const Header = ({ isRightPanelOpen, onToggleRightPanel }: any) => {
           </span>
         )}
 
-        {(isRunning || timer > 0) && (
+        {(isRunning || timer > 0 || runStatus !== 'idle') && (
           <div
             style={{
               display: "flex",
@@ -125,7 +126,7 @@ export const Header = ({ isRightPanelOpen, onToggleRightPanel }: any) => {
                 fontWeight: "600",
               }}
             >
-              {isRunning ? "Running" : "Complete"}
+              {isRunning ? "Running" : runStatus === "failed" ? "Failed" : runStatus === "interrupted" ? "Interrupted" : runStatus === "incomplete" ? "Incomplete" : "Complete"}
             </span>
             <span
               style={{

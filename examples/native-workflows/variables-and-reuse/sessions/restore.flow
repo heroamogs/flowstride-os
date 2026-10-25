@@ -1,0 +1,10 @@
+Feature: Restore a persisted account
+Scenario: Restore in a fresh process
+Given "Load the saved browser state"
+ flow.use session "workflow-reader";
+When "Open the account page"
+ flow.open "/dashboard";
+Then "Cookies and both storage types are restored"
+ flow.expect visible "Welcome, Workflow Reader";
+ flow.expect attribute "#storage" "data-mode" "signed-in";
+ flow.expect attribute "#storage" "data-session" "active";

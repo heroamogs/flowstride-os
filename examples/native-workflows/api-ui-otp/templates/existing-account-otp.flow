@@ -1,0 +1,20 @@
+Feature: Email OTP for an existing application test account
+
+  Scenario: Authenticate an account that requires email OTP
+    Given "An active OTP-enabled test account"
+      flow.open "{{env.LOGIN_URL}}";
+
+    When "Sign in with the application credentials"
+      flow.type input "Email" "{{env.OTP_TEST_EMAIL}}";
+      flow.type input "Password" "{{env.OTP_TEST_PASSWORD}}";
+      flow.click button "Login";
+
+    When "Read the code delivered to the supported test inbox"
+      flow.mail.getOtp "{{env.OTP_TEST_EMAIL}}" into "loginOtp";
+
+    When "Complete verification"
+      flow.type input "Enter 6-digit OTP" "@loginOtp";
+      flow.click button "Verify OTP";
+
+    Then "The application confirms the login"
+      flow.expect visible "Logout";

@@ -18,7 +18,7 @@ export function redactPayload(value: any, secrets: string[] = [], depth = 0): an
   }
   if (Array.isArray(value)) return value.map(item => redactPayload(item, secrets, depth + 1));
   if (!value || typeof value !== 'object') return value;
-  if (Buffer.isBuffer(value)) return '[binary]';
+  if ((globalThis as any).Buffer?.isBuffer(value)) return '[binary]';
   return Object.fromEntries(Object.entries(value).map(([key,item]) => [key, sensitive.test(key) ? '[REDACTED]' : redactPayload(item, secrets, depth + 1)]));
 }
 

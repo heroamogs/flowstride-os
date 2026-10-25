@@ -1,5 +1,7 @@
 # Native browser workflows
 
+For API/UI composition, email OTP, iframe examples, audio-to-text, tables, variables and manual testing, start with [Core Flowstride workflows](NATIVE_WORKFLOWS.md).
+
 OS and Cloud support these commands directly in `.flow` files. Existing commands, plugins and saved sessions continue to work. Use `flow.<area>.<action>` followed by a JSON object. Unknown actions and options fail explicitly.
 
 Keep both engine installations current when using these features. If an installed Cloud engine lacks the required capability protocol, the public runner warns and uses OS fallback for the run. Existing commands can still use an older compatible Cloud engine; Cloud-only services require a compatible Cloud installation.
@@ -71,6 +73,8 @@ Chromium remains the default. Browser installation must match the installed Flow
 ```
 
 Validated settings include viewport/screen, device scale, touch/mobile emulation, locale/timezone, color/contrast/motion, JavaScript, HTTPS handling, CSP bypass, permissions/geolocation, offline mode, headers, HTTP credentials, proxy, downloads, strict selectors, storage state and project-local client certificate paths. Use `browserOptions` for the default profile and `options` in `flow.browser.create` for a separate profile. Secrets belong in environment variables or private local files.
+
+Set `BASE_URL` directly in a project `.env` file when you want a common application URL. String values in native `.flow` command payloads support environment templates. The JSON configuration loader does not generally expand `{{env.NAME}}` throughout arbitrary `browserOptions`; use supported native profile options for command-time credential interpolation.
 
 Runtime commands include `flow.browser.offline` with `value`, `flow.browser.permissions` with `permissions` and optional `origin`, `flow.browser.clearPermissions`, and `flow.browser.geolocation` with latitude/longitude. Recording paths are controlled by evidence settings, rather than arbitrary browser path options. JavaScript logger callbacks are not JSON DSL settings.
 
@@ -339,3 +343,39 @@ For later runs, use `--shard-history path/to/timings.json` from a previous compl
 Chromium's current stealth behavior can override an explicitly requested locale. Use Firefox or WebKit for locale-sensitive checks and verify the observed language. For HAR playback in Firefox/WebKit, leave forced browser-offline mode unset and stop the real server to verify the recording; combining forced offline mode and HAR can reject navigation before fulfillment.
 
 The maintained command reference, browser compatibility guide and API-to-UI examples are available in the [Flowstride documentation](https://docs.flowstride.io/guide/native-browser-workflows).
+
+## Assertion results and `And`
+
+Native checks `flow.assert.that`, `flow.network.expect`, `flow.download.expect`,
+`flow.stub.expect`, `flow.a11y.scan` and `flow.a11y.match` can appear under
+`Then` or `And`. State-changing browser, route and clock commands belong under
+`Given` or `When`.
+
+```flow
+Then "The login button is ready"
+  flow.assert.that {
+    "role": "button",
+    "name": "Submit",
+    "condition": "enabled",
+    "timeout": 10000
+  };
+And "The heading is visible"
+  flow.assert.that {
+    "role": "heading",
+    "name": "Welcome",
+    "condition": "visible"
+  };
+```
+
+Terminal, CI JSON/JUnit and dashboard evidence retain individual lookup and
+condition results. A failing condition does not erase successful target checks.
+Missing prerequisites and later steps are marked not evaluated / not tested.
+Expected and observed values, timeout, profile and source location explain a
+failure. These child diagnostics do not count as extra test steps.
+
+All command failures retain the original adapter error, call log and nested
+causes, plus command, file/line and relevant target/resource. This applies to
+browser actions, APIs, plugins, sessions, games, audio and email workflows.
+Timeouts are reported as observed timeouts, without inventing a root cause when
+the application does not provide one. Secrets and terminal control characters
+are protected in diagnostics.

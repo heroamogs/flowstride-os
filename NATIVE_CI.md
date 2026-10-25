@@ -85,9 +85,9 @@ flow.use session "browser";
 
 Attribute comparisons wait up to the configured timeout. Exact matching is case-sensitive; `contains` checks a substring. Missing attributes fail even when the expected value is empty.
 
-Sessions capture cookies, local storage, session storage and the current HTTP(S) storage origin. Session storage is restored immediately on the matching origin or before its first matching navigation. It is not seeded into unrelated origins. The initial seed is then removed so later application changes and reloads are preserved.
+Sessions capture cookies, local storage, session storage and the current HTTP(S) storage origin. Local storage and session storage are restored immediately on the matching origin or before its first matching navigation. It is not seeded into unrelated origins. The initial seed is then removed so later application changes and reloads are preserved.
 
-Existing cookie/local-storage snapshots remain compatible. Older snapshots with session storage but no origin use the current application origin or configured `baseUrl`; open the application first or set `baseUrl` if neither is available. Restoration merges saved keys into storage. This is a single-origin storage snapshot.
+Existing cookie/local-storage snapshots remain compatible. Older snapshots with Web Storage but no origin prefer the configured application `baseUrl` (including `BASE_URL`), then an available current HTTP(S) application page. Configure the intended base URL before restoring a legacy record. Restoration merges saved keys into storage. This is a single-origin storage snapshot.
 
 ## Interactive history and debugging
 
@@ -96,3 +96,15 @@ Each completed flow tab restores its own last captured screen. Selecting an earl
 The local cURL preview remains `[REDACTED]`. Copy uses the original captured request held in interactive debugger memory. Already-redacted historical data cannot be recovered. CI and Cloud reports retain redaction.
 
 Review artifact access and test data: credential redaction does not remove every possible application secret, and screenshots or videos can show sensitive information.
+
+## Runnable core workflow examples
+
+[Core Flowstride workflows](NATIVE_WORKFLOWS.md) covers API + UI, email OTP, iFrames, audio/transcripts, tables/cells, variables and manual testing. The [shared setup](examples/native-workflows/README.md) explains the local demo application's lifecycle and CI configuration.
+
+After `npm ci` and matching browser installation, a CI job can run a named local example with:
+
+```sh
+npx --no-install flowstride run workflow-examples/api-and-ui/flows/api-and-ui.flow --ci
+```
+
+In CI, `--no-install` makes a missing local Flowstride installation fail rather than fetching a package. Ordinary interactive commands use `npx flowstride`. Configure the local app through `webServer`, and exclude `negative/` examples and unconfigured service templates from your passing CI target.

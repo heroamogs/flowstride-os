@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { WorkspaceMode } from "workspace_engine";
+import { useFlowStore } from "../store";
+import { manualFlowTitle } from "../utils/manualFlowTitle";
 import {
   ChevronRight,
   ChevronDown,
@@ -79,7 +81,12 @@ export const TopToolbar = ({
   const isMetadataLocked = activeMode === WorkspaceMode.Execution;
 
   const activeFlow = flows.find((f) => f.id === activeFlowId);
-  const activeFlowName = activeFlow ? activeFlow.name : "New Local Flow";
+  const { activeHistoricalRunId } = useFlowStore();
+  const activeFlowName = manualFlowTitle(
+    activeHistoricalRunId !== null,
+    activeFlow?.name,
+    metadata?.flowName,
+  );
 
   const getRelativeTime = (timestamp?: number) => {
     if (!timestamp) return "Just now";

@@ -1,3 +1,4 @@
+import { AssertionDetails } from "./AssertionDetails";
 import React, { useState, useEffect, useRef } from "react";
 import {
   ChevronDown,
@@ -59,7 +60,7 @@ export const FlowList = () => {
     const allSteps = fileScenarios.flatMap((s) => s.steps);
 
     if (allSteps.length > 0) {
-      if (allSteps.some((s) => s.status === "failed")) {
+      if (fileScenarios.some(s=>s.status === "failed") || allSteps.some((s) => s.status === "failed")) {
         failed++;
       } else if (
         allSteps.every((s) => ["pass", "passed", "success"].includes(s.status))
@@ -249,7 +250,7 @@ export const FlowList = () => {
 
           let fileStatus = "pending";
           if (allSteps.length > 0) {
-            if (allSteps.some((s) => s.status === "failed"))
+            if (fileScenarios.some(s=>s.status === "failed") || allSteps.some((s) => s.status === "failed"))
               fileStatus = "failed";
             else if (allSteps.some((s) => s.status === "running"))
               fileStatus = "running";
@@ -500,11 +501,13 @@ export const FlowList = () => {
                                         flex: 1,
                                         textOverflow: "ellipsis",
                                         overflow: "hidden",
-                                        whiteSpace: "nowrap",
+                                        whiteSpace: "normal",
                                         marginLeft: "8px",
                                       }}
                                     >
-                                      {step.command}
+                                      {step.commandLabel || step.command}
+                                      <AssertionDetails result={step.assertion} />
+                                      {step.error && !step.assertion && <div style={{whiteSpace:'pre-wrap',color:'#f87171'}}>{step.error}</div>}
                                     </span>
                                   </div>
                                 );

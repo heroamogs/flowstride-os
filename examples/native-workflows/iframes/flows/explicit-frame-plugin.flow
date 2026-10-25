@@ -1,0 +1,20 @@
+Feature: An explicit iframe action through a focused project plugin
+  let frameActions = "workflow-examples/iframes/plugins/frame-actions.ts";
+
+  Scenario: Click a CSS target in the selected child frame
+    Given "The embedded profile is open"
+      flow.open "/frames";
+
+    When "Click the explicit child-frame selector"
+      frameActions.click {
+        "frame": "#profile-frame",
+        "selector": "#frame-only"
+      };
+
+    Then "The selected frame shows its result"
+      flow.assert.that {
+        "frame": "#profile-frame",
+        "selector": "#frame-result",
+        "condition": "text",
+        "value": "Clicked in frame"
+      };

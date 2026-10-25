@@ -84,6 +84,7 @@ export interface FlowstrideSDK {
     get: (url: string, headers?: Record<string, string>) => Promise<any>;
     post: (url: string, body: any, headers?: Record<string, string>) => Promise<any>;
     put: (url: string, body: any, headers?: Record<string, string>) => Promise<any>;
+    patch: (url: string, body: any, headers?: Record<string, string>) => Promise<any>;
     delete: (url: string, headers?: Record<string, string>) => Promise<any>;
   };
   ui: {
@@ -95,6 +96,8 @@ export interface FlowstrideSDK {
   state: {
     get: (key: string) => any;
     set: (key: string, value: any) => void;
+    delete: (key: string) => void;
+    clear: () => void;
   };
   env: {
     get: (key: string) => string | undefined;
