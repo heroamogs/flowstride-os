@@ -1,6 +1,14 @@
+import { assertionText } from './assertion_result';
 import * as fs from "fs";
 import * as path from "path";
 import { chromium } from "playwright";
+import { stepStatusPresentation } from "./step_status";
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]!);
+}
 
 export class PdfGenerator {
   public async generateTestcasePdf(
@@ -56,7 +64,7 @@ export class PdfGenerator {
       scenariosToProcess = data;
     }
 
-    const groupedScenarios: Record<string, any[]> = {};
+    const groupedScenarios: Record<string, any[]> = Object.create(null);
     scenariosToProcess.forEach((scenario) => {
       const key = scenario.fileName || "General";
       if (!groupedScenarios[key]) groupedScenarios[key] = [];
@@ -74,35 +82,30 @@ export class PdfGenerator {
       let fileRows = "";
       flatSteps.forEach((step: any, idx: number) => {
         totalSteps++;
-        const status = (step.status || "PENDING").toUpperCase();
+        const result = stepStatusPresentation(step.status);
+        if (result.isPassed) passedSteps++;
+        else if (result.isFailed) failedSteps++;
 
-        const isSuccess =
-          status === "PASS" || status === "PASSED" || status === "SUCCESS";
-        const isFail = status === "FAILED" || status === "FAIL";
-
-        if (isSuccess) passedSteps++;
-        else if (isFail) failedSteps++;
-
-        const color = isSuccess ? "#10b981" : isFail ? "#ef4444" : "#64748b";
-        const actualResultText = isFail
-          ? "Validation Failed"
-          : "Action verified successfully.";
-        const actualResultColor = isFail ? "#ef4444" : "#64748b";
+        const actionText = step.commandLabel || step.command || step.action || "-";
+        const expectedText = step.description
+          ? `${step.type ? `${step.type} ` : ""}${step.description}`
+          : step.expected || "-";
+        const actualResultColor = result.isFailed ? "#ef4444" : "#64748b";
 
         fileRows += `
-          <tr>
+          <tr data-step-status="${result.status}">
             <td style="padding: 16px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 500; width: 50px;">${idx + 1}</td>
-            <td style="padding: 16px 14px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #1e293b;">${step.command || "action"}</td>
-            <td style="padding: 16px 14px; border-bottom: 1px solid #e2e8f0; color: #475569; font-style: italic;">${step.type || ""} ${step.description || "-"}</td>
-            <td style="padding: 16px 14px; border-bottom: 1px solid #e2e8f0; color: ${actualResultColor};">${actualResultText}</td>
-            <td style="padding: 16px 14px; border-bottom: 1px solid #e2e8f0; font-weight: 900; font-size: 10px; color: ${color};">${status}</td>
+            <td style="padding: 16px 14px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #1e293b;">${escapeHtml(actionText)}</td>
+            <td style="padding: 16px 14px; border-bottom: 1px solid #e2e8f0; color: #475569; font-style: italic;">${escapeHtml(expectedText)}</td>
+            <td style="padding: 16px 14px; border-bottom: 1px solid #e2e8f0; color: ${actualResultColor};">${step.assertion ? `<pre style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(assertionText(step.assertion))}</pre>` : step.error ? `<pre style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(step.error)}</pre>` : result.actualResult}</td>
+            <td style="padding: 16px 14px; border-bottom: 1px solid #e2e8f0; font-weight: 900; font-size: 10px; color: ${result.color};">${result.label}</td>
           </tr>
         `;
       });
 
       tablesHtml += `
         <div class="file-separator">
-          <span>📄 ${fileName.toUpperCase()}</span>
+          <span>📄 ${escapeHtml(fileName.toUpperCase())}</span>
         </div>
         <table>
           <thead>
@@ -148,15 +151,15 @@ export class PdfGenerator {
         </div>
         <div class="summary">
           <div class="stat-box">
-            <div class="stat-value" style="color: #1e293b;">${totalSteps}</div>
+            <div class="stat-value" data-report-count="total" style="color: #1e293b;">${totalSteps}</div>
             <div style="font-size:10px;color:#64748b;text-transform:uppercase;margin-top:4px;font-weight:700;">Total Steps</div>
           </div>
           <div class="stat-box">
-            <div class="stat-value" style="color:#10b981;">${passedSteps}</div>
+            <div class="stat-value" data-report-count="passed" style="color:#10b981;">${passedSteps}</div>
             <div style="font-size:10px;color:#64748b;text-transform:uppercase;margin-top:4px;font-weight:700;">Passed</div>
           </div>
           <div class="stat-box">
-            <div class="stat-value" style="color:#ef4444;">${failedSteps}</div>
+            <div class="stat-value" data-report-count="failed" style="color:#ef4444;">${failedSteps}</div>
             <div style="font-size:10px;color:#64748b;text-transform:uppercase;margin-top:4px;font-weight:700;">Failed</div>
           </div>
         </div>

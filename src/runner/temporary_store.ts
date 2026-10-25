@@ -13,6 +13,10 @@ export class TemporaryStore {
     return this.store.has(key);
   }
 
+  public delete(key: string): boolean {
+    return this.store.delete(key);
+  }
+
   public clear(): void {
     this.store.clear();
   }

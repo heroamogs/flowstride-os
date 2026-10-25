@@ -1,3 +1,4 @@
+import { validateExpectationType, validateResponseTimeThreshold, isAssertionStep } from './assertion_contract';
 import { Token, TokenType } from "./lexer";
 
 export interface DeclarationNode {
@@ -154,9 +155,9 @@ export class Parser {
       if (token.type === TokenType.LET) {
         declarations.push(this.parseDeclaration());
       } else if (token.type === TokenType.BLOCK) {
-        if (isLocked)
+        if (isLocked && token.value.toLowerCase().replace(/^stop\./, '') !== 'and')
           throw new Error(
-            `Line ${token.line}: Terminal Lock Violation. No steps allowed after Then.`,
+            `Line ${token.line}: Terminal Lock Violation. Only assertion And blocks are allowed after Then.`,
           );
 
         const blockToken = this.advance();
@@ -215,7 +216,7 @@ export class Parser {
         token.type === TokenType.COMMAND ||
         token.type === TokenType.ALIAS_COMMAND
       ) {
-        if (isLocked && currentBlockType !== "then") {
+        if (isLocked && currentBlockType !== "then" && currentBlockType !== "and") {
           throw new Error(`Line ${token.line}: Terminal Lock Violation.`);
         }
         const step = this.parseCommand();
@@ -226,8 +227,7 @@ export class Parser {
 
         if (
           currentBlockType === "and" &&
-          step.action !== "expect" &&
-          step.action !== "plugin"
+          !isAssertionStep(step.action, step.payload)
         ) {
           throw new Error(
             `Line ${token.line}: And blocks are strictly for assertions or custom assertion plugins.`,
@@ -537,7 +537,13 @@ export class Parser {
         payload.verb = this.consume(
           TokenType.COMMAND,
           "Expected API verb (e.g. POST)",
-        ).value.toLowerCase();
+        ).value.toLowerCase().replace(/^flow\./, '');
+        if (!['get', 'post', 'put', 'patch', 'delete'].includes(payload.verb)) {
+          throw new Error('Authentication refresh requires an HTTP verb: get, post, put, patch or delete.');
+        }
+        if (!['401', '403'].includes(payload.targetStatus)) {
+          throw new Error('Authentication refresh status must be 401 or 403.');
+        }
         payload.url = this.consume(
           TokenType.STRING,
           "Endpoint URL expected",
@@ -730,6 +736,7 @@ export class Parser {
           );
         }
 
+        validateExpectationType(mod);
         payload.type = mod;
 
         if (mod === "status") {
@@ -748,6 +755,7 @@ export class Parser {
             TokenType.STRING,
             "Time threshold expected",
           ).value;
+          validateResponseTimeThreshold(payload.threshold, true);
         } else if (
           mod === "resBody" ||
           mod === "resHeader" ||

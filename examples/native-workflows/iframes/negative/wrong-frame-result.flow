@@ -1,0 +1,13 @@
+Feature: Supported iframe interaction
+Scenario: Find a readable target in a child frame
+Given "The embedded profile is open"
+  flow.open "/frames";
+When "Click the readable child-frame target"
+  flow.click "Frame action";
+Then "Assert the explicit child-frame result"
+  flow.assert.that {
+    "frame": "#profile-frame",
+    "selector": "#frame-result",
+    "condition": "text",
+    "value": "Never clicked"
+  };

@@ -1,3 +1,4 @@
+import { isLocalWorkspaceRequest } from '../../security/localWorkspace';
 import { projectPath } from '../../utils/projectPaths';
 import { readManualPayload, ManualInputError } from '../../manual/security';
 import * as http from "http";
@@ -5,6 +6,67 @@ import * as path from "path";
 import * as fs from "fs";
 import { WebSocketServer } from "ws";
 import chalk from "chalk";
+
+/** Complete local persistence before publishing a usable media URL. */
+function receiveManualUpload(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  filePath: string,
+  maxSize: number,
+  limitMessage: string,
+  onSaved: (size: number) => void | Promise<void>,
+  onChunk?: (chunk: Buffer) => void,
+): void {
+  let size = 0;
+  let saved = false;
+  let failure: { status: number; message: string } | undefined;
+  const output = fs.createWriteStream(filePath);
+  const sendFailure = () => {
+    if (!res.destroyed && !res.writableEnded && !res.headersSent) {
+      res.writeHead(failure?.status || 500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: failure?.message || 'Upload stream failed' }));
+    }
+  };
+  const fail = (status: number, message: string) => {
+    if (saved || failure) return;
+    failure = { status, message };
+    output.destroy();
+    // Drain the rejected request without buffering it so the error can be sent.
+    req.resume();
+  };
+  output.on('error', () => fail(500, 'Upload stream failed'));
+  output.once('close', () => {
+    if (saved) return;
+    // An early destroy may race the asynchronous file open. Cleanup belongs
+    // after close, when a partial file can no longer be recreated or written.
+    try { fs.unlinkSync(filePath); } catch (error: any) {
+      if (error.code !== 'ENOENT') console.warn('[Upload]: Could not remove a partial media file.');
+    }
+    sendFailure();
+  });
+  output.once('finish', () => {
+    if (failure) return;
+    saved = true;
+    Promise.resolve().then(() => onSaved(size)).catch(() => {
+      failure = { status: 500, message: 'Upload completion failed' };
+      sendFailure();
+    });
+  });
+  req.on('data', (chunk: Buffer) => {
+    if (failure || saved) return;
+    size += chunk.length;
+    if (size > maxSize) { fail(413, limitMessage); return; }
+    onChunk?.(chunk);
+    if (!output.write(chunk)) {
+      req.pause();
+      output.once('drain', () => { if (!failure) req.resume(); });
+    }
+  });
+  req.once('end', () => { if (!failure) output.end(); });
+  req.once('aborted', () => fail(400, 'Upload aborted'));
+  req.once('error', () => fail(500, 'Upload stream failed'));
+  res.once('close', () => { if (!res.writableFinished) fail(400, 'Upload aborted'); });
+}
 
 export async function startManualWorkspaceServer(): Promise<void> {
   const cliInstallPath = path.resolve(__dirname, "../../..");
@@ -43,12 +105,17 @@ export async function startManualWorkspaceServer(): Promise<void> {
   };
 
   const httpServer = http.createServer(async (req, res) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, X-File-Extension",
-    );
+    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
+    const fetchSite = typeof req.headers['sec-fetch-site'] === 'string' ? req.headers['sec-fetch-site'] : undefined;
+    if (!isLocalWorkspaceRequest(req.headers.host, origin, req.socket.localPort, fetchSite)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Forbidden');
+      return;
+    }
+    if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-File-Extension');
 
     if (req.method === "OPTIONS") {
       res.writeHead(204);
@@ -79,48 +146,12 @@ export async function startManualWorkspaceServer(): Promise<void> {
       const safeFilename = `media_${Date.now()}_${Math.random().toString(36).substring(2, 9)}${ext.toLowerCase()}`;
       const filePath = projectPath(process.cwd(), path.join(mediaDir, safeFilename));
 
-      const MAX_SIZE = 104857600;
-      let uploadedSize = 0;
-      let isAborted = false;
-
-      const writeStream = fs.createWriteStream(filePath);
-
-      req.on("data", (chunk) => {
-        if (isAborted) return;
-        uploadedSize += chunk.length;
-        if (uploadedSize > MAX_SIZE) {
-          isAborted = true;
-          writeStream.destroy();
-          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-          res.writeHead(413, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({ error: "Payload Too Large. Max size is 100MB." }),
-          );
-        } else {
-          writeStream.write(chunk);
-        }
-      });
-
-      req.on("end", () => {
-        if (isAborted) return;
-        writeStream.end();
-        console.log(
-          chalk.blue(
-            `\n[Reference Uploaded]: Securely saved ${safeFilename} (${(uploadedSize / 1024 / 1024).toFixed(2)} MB)`,
-          ),
-        );
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ url: `/media/${safeFilename}` }));
-      });
-
-      req.on("error", (err) => {
-        if (!isAborted) {
-          writeStream.destroy();
-          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Upload stream failed" }));
-        }
-      });
+      receiveManualUpload(req, res, filePath, 104857600,
+        'Payload Too Large. Max size is 100MB.', (uploadedSize) => {
+          console.log(chalk.blue(`\n[Reference Uploaded]: Securely saved ${safeFilename} (${(uploadedSize / 1024 / 1024).toFixed(2)} MB)`));
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ url: `/media/${safeFilename}` }));
+        });
       return;
     }
 
@@ -233,51 +264,13 @@ export async function startManualWorkspaceServer(): Promise<void> {
       const safeFilename = `defect_${Date.now()}_${Math.random().toString(36).substring(2, 9)}${ext.toLowerCase()}`;
       const filePath = projectPath(process.cwd(), path.join(defectMediaDir, safeFilename));
 
-      const MAX_SIZE = 41943040; // Capped at 40MB
-      let uploadedSize = 0;
-      let isAborted = false;
-
-      const writeStream = fs.createWriteStream(filePath);
-
-      req.on("data", (chunk) => {
-        if (isAborted) return;
-        uploadedSize += chunk.length;
-        if (uploadedSize > MAX_SIZE) {
-          isAborted = true;
-          writeStream.destroy();
-          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-          res.writeHead(413, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({ error: "Payload Too Large. Max size is 40MB." }),
-          );
-        } else {
-          writeStream.write(chunk);
-        }
-      });
-
-      req.on("end", async () => {
-        if (isAborted) return;
-        writeStream.end();
-
-        const finalUrl = `/defect_media/${safeFilename}`;
-        console.log(
-          chalk.green(
-            `\n[Vault Success]: Defect Media secured locally at -> ${finalUrl}`,
-          ),
-        );
-
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ url: finalUrl }));
-      });
-
-      req.on("error", (err) => {
-        if (!isAborted) {
-          writeStream.destroy();
-          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Upload stream failed" }));
-        }
-      });
+      receiveManualUpload(req, res, filePath, 41943040,
+        'Payload Too Large. Max size is 40MB.', () => {
+          const finalUrl = `/defect_media/${safeFilename}`;
+          console.log(chalk.green(`\n[Vault Success]: Defect Media secured locally at -> ${finalUrl}`));
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ url: finalUrl }));
+        });
       return;
     }
 
@@ -915,7 +908,12 @@ export async function startManualWorkspaceServer(): Promise<void> {
     }
   });
 
-  const wss = new WebSocketServer({ server: httpServer });
+  const wss = new WebSocketServer({
+    server: httpServer,
+    verifyClient: (info: { origin: string; req: http.IncomingMessage }) => Boolean(info.origin) &&
+      isLocalWorkspaceRequest(info.req.headers.host, info.origin, info.req.socket.localPort,
+        typeof info.req.headers['sec-fetch-site'] === 'string' ? info.req.headers['sec-fetch-site'] : undefined),
+  });
 
   wss.on("connection", (ws) => {
     ws.send(
@@ -936,7 +934,7 @@ export async function startManualWorkspaceServer(): Promise<void> {
     process.exit(1);
   });
 
-  httpServer.listen(0, async () => {
+  httpServer.listen(0, '127.0.0.1', async () => {
     try {
       const address = httpServer.address();
       const port =
@@ -949,7 +947,7 @@ export async function startManualWorkspaceServer(): Promise<void> {
         process.exit(1);
       }
 
-      const localUrl = `http://localhost:${port}`;
+      const localUrl = `http://127.0.0.1:${port}`;
       console.log(
         chalk.yellow(
           `\n[Workspace]: Manual Design server running at ${localUrl}`,

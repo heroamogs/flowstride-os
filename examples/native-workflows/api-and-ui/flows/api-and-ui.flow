@@ -1,0 +1,27 @@
+Feature: API and browser in one test
+Scenario: Create through API and sign in through UI
+Given "Create a disposable user"
+  flow.post "/api/users" with reqBody;
+  """
+  {
+    "email": "$randomEmail@example.test",
+    "password": "fixture-password",
+    "name": "Workflow Reader"
+  }
+  """
+  flow.extract resBody "id" as "createdId";
+  flow.extract resBody "email" as "createdEmail";
+And "Creation succeeds"
+  flow.expect status "201";
+When "Sign in through the browser"
+  flow.open "/login";
+  flow.type input "Email" "@createdEmail";
+  flow.type input "Password" "fixture-password";
+  flow.click button "Sign in";
+And "The UI shows the created account"
+  flow.expect visible "Welcome, Workflow Reader";
+When "Verify backend state from the same test"
+  flow.get "/api/users/@createdId";
+Then "The backend recorded the browser login"
+  flow.expect status "200";
+  flow.expect resBody "loginCount" equals "1";

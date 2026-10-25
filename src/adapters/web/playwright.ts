@@ -76,7 +76,7 @@ export class WebAdapter {
   }
   private async finishProfile(key: string, videoTargetPath?: string): Promise<void> {
     const profile = this.profiles.get(key); if (!profile) return;
-    await this.clearSessionStorageRestore(profile.page);
+    for (const page of profile.context.pages()) await this.clearSessionStorageRestore(page);
     if (profile.tracing) await this.endTrace(key);
     const video = profile.page.video();
     await profile.context.close();
@@ -135,13 +135,15 @@ export class WebAdapter {
 
   private dialogHandler: ((dialog: Dialog) => Promise<void>) | null = null;
 
-  private sessionStorageRestores = new Map<Page, { page: Page; script: Disposable; onNavigation: (frame: Frame) => void }>();
+  // One-shot initializers for both Web Storage types, owned by their exact page.
+  private sessionStorageRestores = new Map<Page, { page: Page; script: Disposable; onNavigation: (frame: Frame) => void; onClose: () => void }>();
   private get pendingSessionStorageRestore() { return this.sessionStorageRestores.values().next().value || null; }
   private async clearSessionStorageRestore(target?: Page): Promise<void> {
     for (const [page, pending] of this.sessionStorageRestores) {
       if (target && page !== target) continue;
       this.sessionStorageRestores.delete(page);
       pending.page.off('framenavigated', pending.onNavigation);
+      pending.page.off('close', pending.onClose);
       try { await pending.script.dispose(); } catch (error) { if (!pending.page.isClosed()) throw error; }
     }
   }
@@ -361,10 +363,11 @@ export class WebAdapter {
         return ['http:', 'https:'].includes(url.protocol) ? url.origin : undefined;
       } catch { return undefined; }
     };
+    const hasLocalStorage = !!localStorage && Object.keys(localStorage).length > 0;
     const hasSessionStorage = !!sessionStorage && Object.keys(sessionStorage).length > 0;
     const origin = storageOrigin !== undefined ? originOf(storageOrigin)
-      : originOf(page.url()) || originOf(this.config.baseUrl);
-    if (hasSessionStorage && !origin) {
+      : originOf(this.config.baseUrl) || originOf(page.url());
+    if ((hasLocalStorage || hasSessionStorage) && !origin) {
       throw new Error('Session storage restoration requires a saved HTTP(S) origin, an open application page, or baseUrl.');
     }
 
@@ -410,43 +413,31 @@ export class WebAdapter {
       await this.context.addCookies(formattedCookies);
     }
 
-    if (localStorage && Object.keys(localStorage).length > 0) {
-      await this.page.addInitScript((data) => {
-        for (const [k, v] of Object.entries(data)) {
-          window.localStorage.setItem(k, v as string);
-        }
-      }, localStorage);
-
-      if (this.page.url() !== "about:blank") {
-        await this.page.evaluate((data) => {
-          try {
-            for (const [k, v] of Object.entries(data))
-              window.localStorage.setItem(k, v as string);
-          } catch (e) {}
-        }, localStorage);
-      }
-    }
-
-    if (hasSessionStorage) {
-      const restore = (data: { origin: string; values: Record<string, string> }) => {
+    if (hasLocalStorage || hasSessionStorage) {
+      const restore = (data: { origin: string; local: Record<string, string>; session: Record<string, string> }) => {
+        // A matching iframe inside another site must never receive saved secrets.
         if (window !== window.top || window.location.origin !== data.origin) return;
-        for (const [key, value] of Object.entries(data.values)) window.sessionStorage.setItem(key, value);
+        for (const [key, value] of Object.entries(data.local)) window.localStorage.setItem(key, value);
+        for (const [key, value] of Object.entries(data.session)) window.sessionStorage.setItem(key, value);
       };
-      const data = { origin: origin!, values: sessionStorage! };
+      const data = { origin: origin!, local: localStorage || {}, session: sessionStorage || {} };
       if (originOf(page.url()) === origin) {
+        // Already on the saved origin: restore now without a persistent initializer.
         await page.evaluate(restore, data);
       } else {
-        // Seed before application scripts run; remove the seed after the first
-        // matching document so reloads preserve later application changes.
+        // Seed before application scripts run; remove after the first matching
+        // main document so later reloads preserve application changes and logouts.
         const script = await page.addInitScript(restore, data);
         const onNavigation = (frame: Frame) => {
           if (frame !== page.mainFrame() || originOf(frame.url()) !== origin) return;
           void this.clearSessionStorageRestore(page).catch(() => {
-            console.warn('[Session]: Could not remove the completed session storage initializer.');
+            console.warn('[Session]: Could not remove the completed storage initializer.');
           });
         };
-        this.sessionStorageRestores.set(page, { page, script, onNavigation });
+        const onClose = () => { void this.clearSessionStorageRestore(page).catch(() => {}); };
+        this.sessionStorageRestores.set(page, { page, script, onNavigation, onClose });
         page.on('framenavigated', onNavigation);
+        page.on('close', onClose);
       }
     }
   }
@@ -765,61 +756,9 @@ export class WebAdapter {
     await targetLoc.waitFor({ state: "visible" });
     await targetLoc.scrollIntoViewIfNeeded();
 
-    await targetLoc.focus({ timeout: 3000 }).catch(() => {});
-    await targetLoc
-      .evaluate((node: HTMLElement) => {
-        if (typeof node.focus === "function") node.focus();
-      })
-      .catch(() => {});
-
-    let box = null;
-    try {
-      box = await targetLoc.boundingBox({ timeout: 3000 });
-    } catch (e) {}
-
-    if (box) {
-      const centerX = box.x + box.width / 2;
-      const centerY = box.y + box.height / 2;
-
-      await this.page!.mouse.move(centerX, centerY, { steps: 5 });
-    }
-
-    await targetLoc.hover({ force: true, timeout: 3000 }).catch(() => {});
-
-    await targetLoc
-      .evaluate((node: Element) => {
-        const rect = node.getBoundingClientRect();
-        const x = rect.left + rect.width / 2;
-        const y = rect.top + rect.height / 2;
-
-        const events = [
-          "pointerover",
-          "pointerenter",
-          "mouseover",
-          "mouseenter",
-          "mousemove",
-        ];
-        events.forEach((type) => {
-          node.dispatchEvent(
-            new MouseEvent(type, {
-              view: window,
-              bubbles: true,
-              cancelable: true,
-              clientX: x,
-              clientY: y,
-              screenX: x,
-              screenY: y,
-            }),
-          );
-        });
-      })
-      .catch(() => {});
-
-    await targetLoc
-      .click({ delay: 50, force: true, timeout: 3000 })
-      .catch(() => {});
-
-    await this.page!.waitForTimeout(600);
+    // A real pointer hover preserves browser actionability checks and must not
+    // focus, click, or synthesize duplicate application events.
+    await targetLoc.hover();
   }
 
   public async type(

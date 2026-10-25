@@ -1,3 +1,4 @@
+import { runtimeFailure } from '../../reporting/runtime_failure';
 import { needsNativeBrowserProtocol } from '../../native/compatibility';
 import { projectPath } from '../../utils/projectPaths';
 import { loadNativeConfig, isCIEnvironment } from '../../ci/config';
@@ -142,12 +143,13 @@ export async function runAction(
 
       if (config.ci && proOrchModule.FlowOrchestrator.nativeCIProtocol !== 1) throw new Error('Installed Pro engine does not support native CI protocol 1; install the matching Pro candidate.');
       if (needsNativeBrowserProtocol(resolvedPath, config) && (proWorkerModule.FlowWorker.nativeBrowserProtocol !== 2 || proOrchModule.FlowOrchestrator.nativeBrowserProtocol !== 2)) throw new Error('Installed Cloud engine does not support these native browser capabilities. Install the matching Cloud archive; this run will use OS fallback.');
+      if (needsNativeBrowserProtocol(resolvedPath, config) && (proWorkerModule.FlowWorker.nativeAssertionProtocol !== 1 || proOrchModule.FlowOrchestrator.nativeAssertionProtocol !== 1)) throw new Error('Installed Cloud engine predates structured assertion reporting; this run will use OS fallback. Install the matching Cloud archive to update.');
       ActiveFlowWorker = proWorkerModule.FlowWorker;
       ActiveFlowOrchestrator = proOrchModule.FlowOrchestrator;
       engineMode = "Enterprise (Pro)";
     } catch (err: any) {
       console.warn(
-        `\n[Warning]: Found @flowstride/pro but failed to boot it. Falling back to Open Source engine. (${err.message})`,
+        `\n[Warning]: Found @flowstride/pro but failed to boot it. Falling back to Open Source engine. (${runtimeFailure("run.setup",{path:resolvedPath},err,{file:resolvedPath})})`,
       );
     }
   }
@@ -171,9 +173,15 @@ export async function runAction(
     process.exit(result.status === 'passed' ? 0 : result.status === 'interrupted' ? 130 : 1);
   }
 
+  const previousRunEvent = config.onRunEvent;
+  config.onRunEvent = event => {
+    previousRunEvent?.(event);
+    if (event.type === 'RUN_COMPLETE') process.exitCode = event.payload?.status === 'success' ? 0 : ['aborted','interrupted'].includes(event.payload?.status) ? 130 : 1;
+  };
   try {
-    await orchestrator.start(resolvedPath);
-    console.log("\n[Flowstride]: Execution suite completed successfully.");
+    const isSuccess = await orchestrator.start(resolvedPath);
+    process.exitCode = isSuccess ? 0 : 1;
+    console.log(isSuccess ? "\n[Flowstride]: Execution suite completed successfully." : "\n[Flowstride]: Execution suite failed.");
 
     if (isCI) {
       const artifactsDir = path.resolve(root, "flowstride-artifacts");
@@ -191,7 +199,7 @@ export async function runAction(
       await new Promise(() => {});
     }
   } catch (error: any) {
-    console.error("\n[Fatal Error]:", error.message);
+    console.error("\n[Fatal Error]:", runtimeFailure("run.setup",{path:resolvedPath},error,{file:resolvedPath}));
 
     if (isCI) {
       console.log(

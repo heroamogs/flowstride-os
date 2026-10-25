@@ -1,0 +1,9 @@
+Feature: Explicit process-global reuse
+Scenario: Read a global extraction in the next file
+Given "Open the reuse form"
+  flow.open "/reuse";
+When "Use the explicitly global label"
+  flow.type input "Selected value" "@global[sharedLabel]";
+  flow.click button "Apply value";
+Then "The environment value survived the file boundary"
+  flow.expect text "Selected Workflow fixture";

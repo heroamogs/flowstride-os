@@ -1,0 +1,27 @@
+Feature: Table and cell reuse
+Scenario: Search, extract and reuse a table value
+Given "The orders table is open"
+  flow.open "/orders";
+When "Find the approved order"
+  flow.type input "Search orders" "FS-102";
+  flow.assert.that {
+    "selector": "#orders tbody tr:not([hidden])",
+    "condition": "count",
+    "value": 1
+  };
+  flow.assert.that {
+    "selector": "#orders tbody tr:has(td:text-is('FS-102')) td:nth-child(3)",
+    "condition": "text",
+    "value": "Approved"
+  };
+When "Extract the order and open its row action"
+  flow.extract text "table[0] tr[2] td[0]" as "selectedOrder";
+  flow.click button "View" inside "table[0] tr[2] td[3]";
+And "The selected order is shown"
+  flow.expect text "Order @selectedOrder";
+When "Reuse the cell on another page"
+  flow.open "/reuse";
+  flow.type input "Selected value" "@selectedOrder";
+  flow.click button "Apply value";
+Then "The reused value remains correct"
+  flow.expect text "Selected FS-102";

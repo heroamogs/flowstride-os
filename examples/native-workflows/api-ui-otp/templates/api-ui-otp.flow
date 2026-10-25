@@ -1,0 +1,31 @@
+Feature: Register through an application API and verify an email OTP in the UI
+
+  Scenario: Complete an email-verified sign-in with a disposable account
+    Given "The application creates an active test account"
+      flow.post "{{env.SIGNUP_URL}}" with reqBody;
+      """
+      {
+        "firstName": "Example",
+        "lastName": "Reader",
+        "email": "$randomEmail@flowstridemail.com",
+        "password": "$randomPassword"
+      }
+      """
+      flow.extract resBody "userId" as "newUserId";
+      flow.expect status "201";
+
+    When "Open the application's sign-in form"
+      flow.open "{{env.LOGIN_URL}}";
+      flow.type input "Email" "@randomEmail@flowstridemail.com";
+      flow.type input "Password" "@randomPassword";
+      flow.click button "Login";
+
+    When "Retrieve the delivered code through FlowMail"
+      flow.mail.getOtp "@randomEmail@flowstridemail.com" into "loginOtp";
+
+    When "Submit the retrieved code"
+      flow.type input "Enter 6-digit OTP" "@loginOtp";
+      flow.click button "Verify OTP";
+
+    Then "The application confirms successful authentication"
+      flow.expect visible "Logout";

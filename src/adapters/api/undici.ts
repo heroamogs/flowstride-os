@@ -11,6 +11,8 @@ export interface ApiState {
 export class ApiAdapter {
   private globalHeaders: Record<string, string> = {};
   private onUnauthorized?: () => Promise<void>;
+  private unauthorizedStatus?: number;
+  private refreshing = false;
 
   private lastStatus: number | null = null;
   private lastBody: any | null = null;
@@ -24,8 +26,12 @@ export class ApiAdapter {
     this.globalHeaders[name] = value;
   }
 
-  public setUnauthorizedHandler(handler: () => Promise<void>): void {
+  public setUnauthorizedHandler(handler: () => Promise<void>, status?: number): void {
+    if (status !== undefined && status !== 401 && status !== 403) {
+      throw new Error('Authentication refresh status must be 401 or 403.');
+    }
     this.onUnauthorized = handler;
+    this.unauthorizedStatus = status;
   }
 
   public getState(): ApiState {
@@ -166,8 +172,12 @@ export class ApiAdapter {
 
     let res = await makeRequest();
 
-    if ((res.status === 401 || res.status === 403) && this.onUnauthorized) {
-      await this.onUnauthorized();
+    if ((res.status === 401 || res.status === 403) && this.onUnauthorized &&
+        !this.refreshing && (this.unauthorizedStatus === undefined || res.status === this.unauthorizedStatus)) {
+      // A refresh can use this adapter too. Never recursively refresh its own rejection.
+      this.refreshing = true;
+      try { await this.onUnauthorized(); }
+      finally { this.refreshing = false; }
       Object.assign(requestHeaders, this.globalHeaders);
       res = await makeRequest();
     }

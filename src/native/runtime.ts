@@ -1,3 +1,4 @@
+import type { AssertionResult, AssertionReporter } from '../reporting/assertion_result';
 import { z } from 'zod';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,12 +15,17 @@ import { accessibility } from './accessibility';
 
 export class NativeRuntime {
   readonly events: NativeEvents;
+  public lastAssertion?: AssertionResult;
+  private assertionGeneration = 0;
   private functions = new NativeFunctions();
   private components: NativeComponents;
   constructor(private web: WebAdapter, private config: FlowstrideConfig) {
     this.events = new NativeEvents(web, config); this.components = new NativeComponents(config);
   }
   async execute(command: string, input: unknown = {}): Promise<unknown> {
+    this.lastAssertion = undefined;
+    const generation=++this.assertionGeneration;
+    const report:AssertionReporter=result=>{if(generation===this.assertionGeneration)this.lastAssertion=result;};
     const [area, action, extra] = command.split('.');
     if (!action || extra) throw new Error(`Unknown native command: flow.${command}`);
     if (area === 'browser') {
@@ -32,12 +38,12 @@ export class NativeRuntime {
       if (action === 'geolocation') { const data = z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180), accuracy: z.number().nonnegative().optional() }).strict().parse(input); await this.web.getContext().setGeolocation(data); return; }
       throw new Error(`Unknown browser action: ${action}`);
     }
-    if (area === 'assert') { if (action !== 'that') throw new Error(`Unknown assertion action: ${action}`); return assertBrowser(this.web.getPage(), input, this.config.timeout); }
-    if (area === 'network') return this.events.network(action, input);
-    if (area === 'download') return this.events.download(action, input);
-    if (area === 'stub') return this.functions.execute(this.web.getPage(), action, input, this.config.timeout);
+    if (area === 'assert') { if (action !== 'that') throw new Error(`Unknown assertion action: ${action}`); return assertBrowser(this.web.getPage(), input, this.config.timeout, report); }
+    if (area === 'network') return this.events.network(action, input, report);
+    if (area === 'download') return this.events.download(action, input, report);
+    if (area === 'stub') return this.functions.execute(this.web.getPage(), action, input, this.config.timeout, report);
     if (area === 'component') return this.components.execute(this.web.getPage(), action, input);
-    if (area === 'a11y') return accessibility(this.web.getPage(), this.config, action, input);
+    if (area === 'a11y') return accessibility(this.web.getPage(), this.config, action, input, report);
     if (area === 'clock') {
       const clock = this.web.getPage().clock;
       if (action === 'install') { const data = z.object({ time: z.union([z.string(), z.number()]).optional() }).strict().parse(input); await clock.install(data); return; }
@@ -69,5 +75,5 @@ export class NativeRuntime {
     const file = evidencePath(this.config, `${name.parse(step)}-${randomUUID()}.dom.html`);
     fs.writeFileSync(file, html, { mode: 0o600 }); return file;
   }
-  async dispose() { await this.events.dispose(); await this.functions.dispose(); await this.components.dispose(); }
+  async dispose() { this.assertionGeneration++; this.lastAssertion=undefined; await this.events.dispose(); await this.functions.dispose(); await this.components.dispose(); }
 }

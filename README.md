@@ -7,7 +7,7 @@ Flowstride OS is an open source framework for browser, API and manual testing. W
 ## Requirements
 
 - Node.js 22.12 or newer.
-- Chromium installed through Flowstride for browser tests.
+- A matching Chromium, Firefox or WebKit installation for browser tests. Chromium is the default; audio-file microphone injection requires Chromium.
 
 ## Get started
 
@@ -40,6 +40,13 @@ Then "The sign-in button is visible"
 ```
 
 Replace the URL and assertion with values from your own application.
+
+## Workflow guides
+
+- [Core workflows](./NATIVE_WORKFLOWS.md): API + UI, email OTP, iFrames, audio-to-text, tables/cells, variables and manual testing.
+- [Runnable examples and local setup](./examples/native-workflows/README.md).
+- [Native browser workflows](./NATIVE_BROWSER.md): profiles, assertions, network control, downloads, traces/HAR, accessibility and components.
+- [Native CI and games](./NATIVE_CI.md).
 
 ## Native CI
 

@@ -1,3 +1,5 @@
+import { AssertionDetails } from "../components/AssertionDetails";
+import { stepStatusPresentation } from "../../../reporting/step_status";
 import { useState } from "react";
 import {
   CheckCircle2,
@@ -37,7 +39,7 @@ export const ReportsView = () => {
     return acc;
   }, {});
 
-  let actualOutcome = "Verified.";
+  let actualOutcome = "Not executed.";
   let networkData = null;
   let stepScreenshot = null;
   let stepBoundingBox = null;
@@ -57,10 +59,10 @@ export const ReportsView = () => {
           (l) =>
             l.type === "ERROR" &&
             l.fileName === selectedStep.fileName &&
-            l.stepContext === expectedContext,
+            (l.details?.stepId ? l.details.stepId === selectedStep.id : l.stepContext === expectedContext),
         );
 
-      actualOutcome = errorLog ? errorLog.summary : "Validation Failed.";
+      actualOutcome = selectedStep.error || errorLog?.details?.rawError || errorLog?.summary || "Validation Failed.";
 
       if (!stepScreenshot && errorLog?.details?.screenshot) {
         stepScreenshot = errorLog.details.screenshot;
@@ -72,7 +74,7 @@ export const ReportsView = () => {
       actualOutcome = "Executing...";
     } else if (isPass) {
       actualOutcome = "Action verified successfully.";
-    }
+    } else { actualOutcome = stepStatusPresentation(selectedStep.status).actualResult; }
 
     const networkLog = logs
       .slice()
@@ -425,7 +427,7 @@ export const ReportsView = () => {
                   border: `1px solid ${["pass", "success", "passed"].includes(selectedStep.status) ? "#d1fae5" : "#fee2e2"}`,
                 }}
               >
-                {actualOutcome}
+                {selectedStep.assertion ? <AssertionDetails result={selectedStep.assertion} light /> : actualOutcome}
               </div>
             </Section>
 

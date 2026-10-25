@@ -1,6 +1,8 @@
+import { AssertionDetails } from "../components/AssertionDetails";
 import { ClipboardCheck, Printer, FileCode } from "lucide-react";
 import { useFlowStore } from "../store";
 import { sendToRunner } from "../socket";
+import { stepStatusPresentation } from "../../../reporting/step_status";
 
 export const TestCaseView = () => {
   const { testScenarios } = useFlowStore();
@@ -10,7 +12,7 @@ export const TestCaseView = () => {
     if (!acc[key]) acc[key] = [];
     acc[key].push(scenario);
     return acc;
-  }, {});
+  }, Object.create(null));
 
   if (testScenarios.length === 0)
     return (
@@ -190,12 +192,12 @@ export const TestCaseView = () => {
                 </thead>
                 <tbody>
                   {flatSteps.map((step: any, index: number) => {
-                    const isFail = step.status === "failed";
+                    const result = stepStatusPresentation(step.status);
                     const serialNumber = index + 1;
 
                     return (
                       <tr
-                        key={step.id}
+                        key={step.id} data-step-status={result.status}
                         style={{ borderBottom: "1px solid #e2e8f0" }}
                       >
                         <td
@@ -232,22 +234,20 @@ export const TestCaseView = () => {
                           style={{
                             padding: "16px 14px",
                             fontSize: "13px",
-                            color: isFail ? "#ef4444" : "#64748b",
+                            color: result.isFailed ? "#ef4444" : "#64748b",
                           }}
                         >
-                          {isFail
-                            ? "Validation Failed"
-                            : "Action verified successfully."}
+                          {step.assertion ? <AssertionDetails result={step.assertion} light /> : step.error ? <div style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{step.error}</div> : result.actualResult}
                         </td>
                         <td style={{ padding: "16px 14px", textAlign: "left" }}>
                           <span
                             style={{
                               fontSize: "10px",
                               fontWeight: "900",
-                              color: isFail ? "#ef4444" : "#10b981",
+                              color: result.color,
                             }}
                           >
-                            {(step.status || "PENDING").toUpperCase()}
+                            {result.label}
                           </span>
                         </td>
                       </tr>

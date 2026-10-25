@@ -102,9 +102,11 @@ export class PluginManager {
           post: (url: string, body: any, headers?: Record<string, string>) =>
             this.apiProxy.post(url, body, headers),
           put: (url: string, body: any, headers?: Record<string, string>) =>
-            (this.apiProxy as any).put(url, body, headers),
+            this.apiProxy.put(url, body, headers),
+          patch: (url: string, body: any, headers?: Record<string, string>) =>
+            this.apiProxy.patch(url, body, headers),
           delete: (url: string, headers?: Record<string, string>) =>
-            (this.apiProxy as any).delete(url, headers),
+            this.apiProxy.delete(url, headers),
         },
         ui: {
           click: (s: string) => this.web.click(s),
@@ -126,6 +128,8 @@ export class PluginManager {
         state: {
           get: (k: string) => this.store.get(k),
           set: (k: string, v: any) => this.store.set(k, v),
+          delete: (k: string) => { this.store.delete(k); },
+          clear: () => this.store.clear(),
         },
         env: {
           get: (k: string) => process.env[k],

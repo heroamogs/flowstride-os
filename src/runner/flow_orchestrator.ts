@@ -15,6 +15,7 @@ import { PdfGenerator } from "../reporting/pdf_generator";
 
 export class FlowOrchestrator {
   public static readonly nativeBrowserProtocol = 2;
+  public static readonly nativeAssertionProtocol = 1;
   public static readonly nativeCIProtocol = 1;
   public readonly nativeEventProtocol = 1;
   private wss: WebSocketServer | null = null;
@@ -89,10 +90,9 @@ export class FlowOrchestrator {
 
     this.worker.on("worker_event", listener);
 
-    await this.worker.runBatch(filesToProcess);
-
-    this.worker.off("worker_event", listener);
-    const passed = ![...this.stepStatusRegistry.values()].some(status => ['failed','running','not_tested'].includes(status));
+    let passed = false;
+    try { passed = await this.worker.runBatch(filesToProcess); }
+    finally { this.worker.off("worker_event", listener); }
     this.forwardToDashboard("RUN_COMPLETE", { status: passed ? 'success' : 'failed' });
     return passed;
   }

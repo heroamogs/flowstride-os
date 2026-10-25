@@ -1,3 +1,4 @@
+import { assertionCheck, requireAssertion, diagnosticValue, type AssertionReporter } from '../reporting/assertion_result';
 import { z } from 'zod';
 import type { Download, Request, Response, Route, BrowserContext, Page } from 'playwright';
 import type { FlowstrideConfig } from '../types';
@@ -46,7 +47,7 @@ export class NativeEvents {
   private savedDownloads = new Map<string, { file: string; suggested: string }>();
   constructor(private web: WebAdapter, private config: FlowstrideConfig) {}
   private key(value: string) { return `${this.web.activeProfile}:${value}`; }
-  async network(action: string, input: unknown): Promise<any> {
+  async network(action: string, input: unknown, reporter?: AssertionReporter): Promise<any> {
     if (this.routeErrors.length) throw new Error(`Network route failed: ${this.routeErrors.shift()}`);
     if (action === 'route') {
       const data = routeSchema.parse(input), key = this.key(data.name), context = this.web.getContext();
@@ -120,15 +121,20 @@ export class NativeEvents {
       const data = networkExpect.parse(input), result = this.captured.get(this.key(data.name));
       if (!result) throw new Error('No captured event; call network.wait first.');
       if (!['status','method','equals','contains'].some(key => key in data)) throw new Error('Provide a network expectation.');
-      if (data.status !== undefined && result.status !== data.status || data.method && result.method !== data.method.toUpperCase()) throw new Error('Network status/method assertion failed.');
+      const checks = [];
+      if (data.status !== undefined) checks.push(assertionCheck('status','status',result.status===data.status,data.status,result.status));
+      if (data.method) checks.push(assertionCheck('method','method',result.method===data.method.toUpperCase(),data.method.toUpperCase(),result.method));
       let actual = data.header ? result.headers[data.header.toLowerCase()] : result.body;
-      if (data.path) for (const key of data.path.split('.')) actual = actual?.[key];
-      if ('equals' in data && !isDeepStrictEqual(actual, data.equals) || data.contains !== undefined && !String(actual).includes(data.contains)) throw new Error('Network content assertion failed.');
+      if (data.path) for (const key of data.path.split('.')) actual=actual?.[key];
+      const protect = (value:unknown) => /password|passcode|secret|token|authorization|cookie|api.?key|otp/i.test((data.header||'')+' '+(data.path||'')) ? '[REDACTED]' : value;
+      if ('equals' in data) checks.push(assertionCheck('equals',(data.header?'header '+data.header:data.path?'body path '+data.path:'body')+' equals',isDeepStrictEqual(actual,data.equals),protect(data.equals),protect(actual)));
+      if (data.contains !== undefined) checks.push(assertionCheck('contains','content contains',String(actual).includes(data.contains),protect(data.contains),protect(actual)));
+      requireAssertion('network.expect','captured network event '+JSON.stringify(data.name),checks,reporter,{reason:checks.some(check=>check.status==='failed'&&['status','method'].includes(check.key))?'Network status/method assertion failed.':checks.some(check=>check.status==='failed')?'Network content assertion failed.':undefined});
       return;
     }
     throw new Error(`Unknown network action: ${action}`);
   }
-  async download(action: string, input: unknown): Promise<any> {
+  async download(action: string, input: unknown, reporter?: AssertionReporter): Promise<any> {
     if (action === 'arm') {
       const data = z.object({ name, timeout: positive.optional() }).strict().parse(input), key = this.key(data.name), page = this.web.getPage();
       if (this.downloads.has(key)) throw new Error('Download name already armed.');
@@ -156,7 +162,14 @@ export class NativeEvents {
       const body = data.contains !== undefined || 'json' in data ? readProjectFile(this.config, saved.file) : Buffer.alloc(0);
       let sha256: string | undefined;
       if (data.sha256) { const hash = createHash('sha256'); for await (const chunk of fs.createReadStream(absolute)) hash.update(chunk); sha256 = hash.digest('hex'); }
-      if (data.filename !== undefined && saved.suggested !== data.filename || data.size !== undefined && length !== data.size || data.minSize !== undefined && length < data.minSize || data.contains !== undefined && !body.toString('utf8').includes(data.contains) || data.sha256 !== undefined && sha256 !== data.sha256 || 'json' in data && !isDeepStrictEqual(JSON.parse(body.toString('utf8')), data.json)) throw new Error('Download assertion failed.');
+      const checks=[];
+      if(data.filename!==undefined)checks.push(assertionCheck('filename','filename',saved.suggested===data.filename,data.filename,saved.suggested));
+      if(data.size!==undefined)checks.push(assertionCheck('size','size',length===data.size,data.size,length));
+      if(data.minSize!==undefined)checks.push(assertionCheck('minSize','minimum size',length>=data.minSize,data.minSize,length));
+      if(data.contains!==undefined)checks.push(assertionCheck('contains','content contains',body.toString('utf8').includes(data.contains),data.contains,body.toString('utf8')));
+      if(data.sha256!==undefined)checks.push(assertionCheck('sha256','SHA-256',sha256===data.sha256,data.sha256,sha256));
+      if('json' in data){try{const actual=JSON.parse(body.toString('utf8'));checks.push(assertionCheck('json','JSON content',isDeepStrictEqual(actual,data.json),data.json,actual));}catch(error){checks.push({...assertionCheck('json','JSON content',false,data.json,body.toString('utf8')),reason:'Downloaded content is not valid JSON: '+diagnosticValue(error instanceof Error?error.message:String(error))});}}
+      requireAssertion('download.expect','saved download '+JSON.stringify(data.name),checks,reporter,{reason:checks.some(check=>check.status==='failed')?'Download assertion failed.':undefined});
       return;
     }
     throw new Error(`Unknown download action: ${action}`);

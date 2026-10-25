@@ -1,3 +1,4 @@
+import { assertionText } from '../reporting/assertion_result';
 import { executionPlan } from './distribution';
 import { createHash } from 'node:crypto';
 import { discoverFlows, flowIdentity, videoFileName, selectedFeatures } from '../utils/projectPaths';
@@ -136,10 +137,15 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
   config.artifactsDir = artifactRoot;
   fs.writeFileSync(path.join(artifactRoot, 'timings.json'), JSON.stringify(timings, null, 2));
   fs.writeFileSync(path.join(artifactRoot, 'summary.json'), JSON.stringify(result, null, 2));
-  const cases = results.map(step => `<testcase classname="${xml(step.fileName)}" name="${xml(step.description || step.id)}">${step.status === 'failed' ? `<failure message="${xml(step.error || 'Test step failed')}"/>` : ['skipped','not_tested'].includes(step.status) ? '<skipped/>' : ''}</testcase>`);
+  const cases = results.map(step => `<testcase classname="${xml(step.fileName)}" name="${xml(step.description || step.id)}">${step.status === 'failed' ? `<failure message="${xml(step.error || 'Test step failed')}"/>` : ['skipped','not_tested'].includes(step.status) ? '<skipped/>' : ''}${step.assertion ? `<system-out>${xml(assertionText(step.assertion))}</system-out>` : ''}</testcase>`);
   for (const error of errors) cases.push(`<testcase name="execution"><error message="${xml(error)}"/></testcase>`);
   if (incomplete) cases.push(`<testcase name="completion"><failure message="${incomplete} incomplete steps"/></testcase>`);
   fs.writeFileSync(path.join(artifactRoot, 'junit.xml'), `<?xml version="1.0"?><testsuite name="Flowstride" tests="${cases.length}" failures="${metrics.failed + (incomplete ? 1 : 0)}" errors="${errors.length}" skipped="${metrics.skipped}">${cases.join('')}</testsuite>`);
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n### Flowstride · ${config.device}\nResult: **${result.status}** (${engine})\n\nPassed: ${metrics.passed}; failed: ${metrics.failed}; skipped: ${metrics.skipped}; incomplete: ${metrics.incomplete}.\n`);
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    const failures = results.filter(step => step.status === 'failed').map(step => `<details><summary>${xml(step.commandLabel || step.command || 'Step')} · ${xml(step.fileName)}</summary><pre>${xml(step.error || (step.assertion ? assertionText(step.assertion) : 'Failed without an adapter diagnostic.'))}</pre></details>`);
+    for (const error of errors) failures.push(`<pre>${xml(error)}</pre>`);
+    if (failures.length) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,'\n'+failures.join('\n')+'\n');
+  }
   return result;
 }

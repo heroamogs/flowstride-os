@@ -1,3 +1,7 @@
+import { commandSecrets, runtimeFailure } from '../reporting/runtime_failure';
+import { assertionText, commandLabel, failedAssertion, unexecutedAssertion, type AssertionResult } from '../reporting/assertion_result';
+import { validateExpectationType, validateApiAssertions, validateResponseTimeThreshold } from '../parser/assertion_contract';
+import { nativeStepTimeout } from '../native/deadline';
 import { NativeRuntime } from '../native/runtime';
 import { withDeadline } from '../ci/deadline';
 import { buildReplayRequest, ReplayRequestError } from '../utils/replayRequest';
@@ -38,11 +42,15 @@ export interface SmartSelectorToken {
 
 export class FlowWorker extends EventEmitter {
   public static readonly nativeBrowserProtocol = 2;
+  public static readonly nativeAssertionProtocol = 1;
   private isSilent = process.env.FLOWSTRIDE_PARALLEL === "true";
   private isAborted = false;
   private bailTriggered = false;
   private isDebugHalted = false;
   private native: NativeRuntime;
+  private currentAssertion?: AssertionResult;
+  private commandSecretValues: string[] = [];
+  private batchPassed = true;
   private attempt = 1;
   private maxAttempts = 1;
   private fallbackStream?: NodeJS.Timeout;
@@ -78,8 +86,21 @@ export class FlowWorker extends EventEmitter {
 
   private broadcast(type: string, payload: any) {
     if (["STEP_ADD","STEP_UPDATE","LOG_EVENT"].includes(type)) payload = { ...payload, attempt: this.attempt, profile: this.web.activeProfile || "default" };
-    const secrets = [this.config.machineToken || '', ...(this.dataGen?.sensitiveValues?.() || []), ...Object.entries(process.env).filter(([key]) => /password|token|secret|api.?key/i.test(key)).map(([,value]) => String(value)), ...Object.entries(this.localVariables).filter(([key]) => /password|passcode|token|secret|otp|api.?key/i.test(key)).map(([,value]) => String(value))];
-    this.emit('worker_event', { type, payload: redactWorkerPayload(type, payload, secrets, this.config.ci === false) });
+    this.emit('worker_event', { type, payload: redactWorkerPayload(type, payload, this.secretValues(), this.config.ci === false) });
+  }
+
+  private secretValues(): string[] {
+    return [...this.commandSecretValues, this.config.machineToken || '', ...(this.dataGen?.sensitiveValues?.() || []), ...Object.entries(process.env).filter(([key]) => /password|token|secret|api.?key/i.test(key)).map(([,value]) => String(value)), ...Object.entries(this.localVariables).filter(([key]) => /password|passcode|token|secret|otp|api.?key/i.test(key)).map(([,value]) => String(value))];
+  }
+
+  private assertionForStep(step: any): AssertionResult | undefined {
+    if (!this.currentAssertion) return;
+    const value = { ...this.currentAssertion, sourceFile:this.currentFileName, sourceLine:step.line, profile:this.web.activeProfile || 'default' };
+    return redactWorkerPayload('STEP_UPDATE', { assertion:value }, this.secretValues()).assertion;
+  }
+
+  private printAssertion(value: AssertionResult | undefined) {
+    if (!this.isSilent && value) console.log(assertionText(value).split('\n').map(line=>'        '+line).join('\n'));
   }
 
   private emitLog(
@@ -105,29 +126,14 @@ export class FlowWorker extends EventEmitter {
   }
 
   private translateError(error: any, action: string, payload: any): string {
-    const msg = error.message || String(error);
-    if (
-      msg.includes("API Assertion Failed") ||
-      msg.includes("Network Execution Error") ||
-      msg.includes("Extraction Failed") ||
-      msg.includes("Plugin Execution Failed") ||
-      msg.includes("Scoping Error")
-    )
-      return msg;
-    const target =
-      payload.selector || payload.text || payload.url || "the element";
-    if (msg.includes("Timeout"))
-      return `I waited for "${target}" to appear, but it never did.`;
-    if (msg.includes("intercepted"))
-      return `I found "${target}", but another element is blocking it.`;
-    if (msg.includes("Framework rejected")) return msg;
-    return `An error occurred while trying to ${action}: ${msg.split("\n")[0]}`;
+    return runtimeFailure(action,payload,error,{file:this.currentFileName,profile:this.web.activeProfile || 'default',timeout:this.config.timeout});
   }
 
   private async captureStepContext(
     payload: any,
   ): Promise<{ screenshot?: string; boundingBox?: any }> {
-    const page = this.web.getPage();
+    let page: any;
+    try { page = this.web.getPage(); } catch { return {}; }
     const context: { screenshot?: string; boundingBox?: any } = {};
 
     try {
@@ -375,7 +381,8 @@ export class FlowWorker extends EventEmitter {
     this.isAborted = true;
   }
 
-  public async runBatch(filesToProcess: string[]): Promise<void> {
+  public async runBatch(filesToProcess: string[]): Promise<boolean> {
+    this.batchPassed = filesToProcess.length > 0;
     const isCliHeadless = process.argv.includes("--headless");
 
     if (isCliHeadless) {
@@ -403,7 +410,7 @@ export class FlowWorker extends EventEmitter {
       try {
         await this.web.shutdown();
       } catch (e) {}
-      if (!this.config.ci) process.exit(0);
+      if (!this.config.ci) process.exit(this.isAborted ? 130 : process.exitCode || 0);
     };
 
     process.once("SIGINT", sigintHandler);
@@ -520,7 +527,7 @@ export class FlowWorker extends EventEmitter {
                 fileName: this.currentFileName,
               });
 
-              await this.runScenarioWithRetries(s, f.declarations);
+              if (!await this.runScenarioWithRetries(s, f.declarations)) this.batchPassed = false;
 
               if (this.isDebugHalted || this.bailTriggered) break;
 
@@ -572,12 +579,13 @@ export class FlowWorker extends EventEmitter {
             duration: Date.now() - fileStartTime,
           });
         } catch (e: any) {
+          this.batchPassed = false;
           if (this.isAborted) break;
 
           if (!this.isSilent)
             console.error(
               chalk.red(
-                `\n[Execution]: Failed processing ${this.currentFileName}: ${e.message}`,
+                `\n[Execution]: Failed processing ${this.currentFileName}: ${redactText(runtimeFailure("file.setup",{file:this.currentFileName},e,{file:this.currentFileName}),this.secretValues())}`,
               ),
             );
 
@@ -607,7 +615,7 @@ export class FlowWorker extends EventEmitter {
           this.broadcast("FILE_FAILED", {
             fileName: this.currentFileName,
             duration: Date.now() - fileStartTime,
-            error: e.message,
+            error: runtimeFailure("file.setup",{file:this.currentFileName},e,{file:this.currentFileName}),
           });
         }
       }
@@ -619,7 +627,7 @@ export class FlowWorker extends EventEmitter {
           );
         } else {
           console.log(
-            chalk.green("\n[Execution]: All suites completed successfully."),
+            this.batchPassed ? chalk.green("\n[Execution]: All suites completed successfully.") : chalk.red("\n[Execution]: Test suite failed. Review the diagnostics above."),
           );
         }
       }
@@ -634,6 +642,7 @@ export class FlowWorker extends EventEmitter {
       }
       process.removeListener("SIGINT", sigintHandler);
     }
+    return this.batchPassed && !this.isAborted && !this.isDebugHalted;
   }
 
   private async runScenarioWithRetries(scenario: ScenarioNode, declarations: DeclarationNode[]) {
@@ -643,6 +652,7 @@ export class FlowWorker extends EventEmitter {
     const globals = this.maxAttempts > 1 ? structuredClone(FlowWorker.globalVariables) : {}, globalSessions = this.maxAttempts > 1 ? structuredClone(FlowWorker.globalBrowserSessions) : {};
     const storeState = this.maxAttempts > 1 ? structuredClone(this.store.getAll?.()) : undefined;
     const apiState = this.maxAttempts > 1 ? this.api.checkpointState?.() : undefined;
+    let finalPassed = false;
     for (this.attempt = 1; this.attempt <= this.maxAttempts; this.attempt++) {
       if (this.isAborted || this.isDebugHalted) break;
       if (this.attempt > 1) {
@@ -658,11 +668,18 @@ export class FlowWorker extends EventEmitter {
       const completed = await this.runScenario(structuredClone(scenario), declarations);
       const browserErrors = this.web.pageErrors?.slice(errorIndex) || [];
       const passed = completed && (this.config.browserErrors === 'record' || !browserErrors.length);
+      if (this.config.browserErrors !== 'record') for (const message of browserErrors) {
+        const error = runtimeFailure('browser.pageError',{},new Error(message),{file:this.currentFileName,profile:this.web.activeProfile || 'default'});
+        this.emitLog('ERROR','error',error,{rawError:error,command:'browser.pageError'},undefined,this.currentFileName);
+        if (!this.isSilent) console.error(redactText(error,this.secretValues()));
+      }
       this.broadcast('SCENARIO_RESULT', { fileName: this.currentFileName, scenario: scenario.name, attempt: this.attempt, status: this.isAborted ? 'interrupted' : passed ? 'passed' : 'failed', flaky: passed && this.attempt > 1, browserErrors, duration: Date.now() - started });
+      finalPassed = passed && !(this.config.failOnFlaky && this.attempt > 1);
       if (passed || this.isAborted || this.isDebugHalted) break;
       if (this.attempt < this.maxAttempts) this.web.pageErrors?.splice(errorIndex);
     }
     this.attempt = 1; this.maxAttempts = 1;
+    return finalPassed;
   }
 
   private async runScenario(
@@ -672,24 +689,35 @@ export class FlowWorker extends EventEmitter {
     let hasScenarioFailed = false;
     for (const originalStep of scenario.steps) {
       const step = structuredClone(originalStep);
+      this.currentAssertion = undefined;
+      this.commandSecretValues = [];
       if (this.isAborted) break;
 
       const blockName = step.blockDescription.split(" ")[0];
       let blockDesc = step.blockDescription.substring(blockName.length).trim();
 
+      const stepLabel = commandLabel(step.action, step.payload);
+      if (hasScenarioFailed) {
+        const assertion=unexecutedAssertion(step.action,step.payload);
+        this.broadcast('STEP_ADD',{id:step.id,type:blockName,description:blockDesc,command:step.action,commandLabel:stepLabel,sourceLine:step.line,status:'not_tested',fileName:this.currentFileName});
+        this.broadcast('STEP_UPDATE',{id:step.id,status:'not_tested',assertion,error:null,commandLabel:stepLabel,sourceLine:step.line,fileName:this.currentFileName});
+        continue;
+      }
+
+      let resolutionError: unknown;
+      try {
       blockDesc = this.resolveTextVariables(blockDesc);
       if (this.dataGen) blockDesc = this.dataGen.resolve(blockDesc);
 
       step.payload = this.resolveTemplateData(step.payload);
 
+      } catch (error) { resolutionError = error; }
+      this.commandSecretValues = commandSecrets(step.action,step.payload);
+
       this.currentStepContext = `${blockName} ${blockDesc}`;
 
       const isOpt = step.payload?.optional;
-      if (hasScenarioFailed) {
-        this.broadcast('STEP_ADD', { id: step.id, type: blockName, description: blockDesc, command: step.action, status: 'not_tested', fileName: this.currentFileName });
-        this.broadcast('STEP_UPDATE', { id: step.id, status: 'not_tested', fileName: this.currentFileName });
-        continue;
-      }
+
 
 
       const mockSpinner = {
@@ -724,6 +752,8 @@ export class FlowWorker extends EventEmitter {
         `${blockName}: ${blockDesc}`,
         {
           command: step.action,
+          commandLabel: stepLabel,
+          sourceLine: step.line,
           payload: step.payload,
         },
         undefined,
@@ -735,11 +765,16 @@ export class FlowWorker extends EventEmitter {
         type: blockName as any,
         description: blockDesc,
         command: step.action,
+          commandLabel: stepLabel,
+          sourceLine: step.line,
         status: "running",
+        error: null, assertion: null,
         fileName: this.currentFileName,
       });
 
+      const stepStarted = Date.now();
       try {
+        if (resolutionError) throw resolutionError;
         await this.executeStep(
           step.action,
           step.payload,
@@ -750,9 +785,13 @@ export class FlowWorker extends EventEmitter {
         const stepContext = await this.captureStepContext(step.payload);
         const domSnapshot = await this.native.captureDOM(step.id).catch(() => undefined);
         spinner.succeed();
+        const assertion=this.assertionForStep(step);
+        this.printAssertion(assertion);
         this.broadcast("STEP_UPDATE", {
           id: step.id,
           status: "passed",
+          error: null,
+          assertion,
           screenshot: stepContext.screenshot,
           domSnapshot,
           fileName: this.currentFileName,
@@ -771,6 +810,7 @@ export class FlowWorker extends EventEmitter {
         }
       } catch (e: any) {
         if (this.isAborted) break;
+        const assertion=this.assertionForStep(step);
 
         const stepContext = await this.captureStepContext(step.payload);
         const domSnapshot = await this.native.captureDOM(step.id).catch(() => undefined);
@@ -797,7 +837,7 @@ export class FlowWorker extends EventEmitter {
             "info",
             `Skipped Optional Step: ${blockDesc}`,
             {
-              reason: "Element not present after full timeout.",
+              reason: runtimeFailure(stepLabel,step.payload,e,{file:this.currentFileName,line:step.line}),
               strippedDom,
             },
             undefined,
@@ -806,6 +846,8 @@ export class FlowWorker extends EventEmitter {
           this.broadcast("STEP_UPDATE", {
             id: step.id,
             status: "skipped",
+            error:runtimeFailure(stepLabel,step.payload,e,{file:this.currentFileName,line:step.line}),
+            assertion,
             screenshot: stepContext.screenshot,
             domSnapshot,
             fileName: this.currentFileName,
@@ -857,19 +899,21 @@ export class FlowWorker extends EventEmitter {
           spinner.fail();
         }
 
-        const humanReadableError = this.translateError(
-          e,
-          step.action,
-          step.payload,
-        );
+        const humanReadableError = assertion ? assertionText(assertion) : runtimeFailure(stepLabel,step.payload,e,{file:this.currentFileName,line:step.line,profile:this.web.activeProfile || "default",timeout:this.config.timeout,elapsed:Date.now()-stepStarted});
+        this.printAssertion(assertion);
+        if (!this.isSilent && !assertion) console.error('      '+redactText(String(humanReadableError),this.secretValues()).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g,''));
 
         this.emitLog(
           "ERROR",
           "error",
           humanReadableError,
           {
-            rawError: e.message,
+            rawError: humanReadableError,
+            stepId: step.id,
+            assertion,
             command: step.action,
+          commandLabel: stepLabel,
+          sourceLine: step.line,
             screenshot: stepContext.screenshot,
             boundingBox: stepContext.boundingBox,
             strippedDom,
@@ -881,6 +925,8 @@ export class FlowWorker extends EventEmitter {
         this.broadcast("STEP_UPDATE", {
           id: step.id,
           status: "failed",
+          error: humanReadableError,
+          assertion,
           screenshot: stepContext.screenshot,
           domSnapshot,
           fileName: this.currentFileName,
@@ -967,9 +1013,21 @@ export class FlowWorker extends EventEmitter {
       ].join(", ");
     }
 
+    if (action === 'expect') validateExpectationType(payload?.type);
+
     switch (action) {
       case 'native': {
-        const result = await withDeadline(this.native.execute(payload.pluginMethod, payload.data), this.config.timeout);
+        const timeout = nativeStepTimeout(payload.pluginMethod, payload.data, this.config.timeout);
+        let result: unknown;
+        try {
+          result = await withDeadline(this.native.execute(payload.pluginMethod, payload.data), timeout);
+          this.currentAssertion = this.native.lastAssertion;
+        } catch (error: any) {
+          const fallback = unexecutedAssertion('native',payload,'The assertion could not execute.');
+          if (fallback) { fallback.status='failed';fallback.checks.push({key:'execution',label:'Assertion execution',status:'failed',reason:String(error.message||error)}); }
+          this.currentAssertion = failedAssertion(error.assertion || this.native.lastAssertion || fallback, String(error.message||error));
+          throw error;
+        }
         if (payload.saveAs) this.localVariables[payload.saveAs] = result;
         break;
       }
@@ -1327,8 +1385,8 @@ export class FlowWorker extends EventEmitter {
                 `API Assertion Failed: Expected HTTP status ${expectedStatus}, but got ${apiState.status}`,
               );
           } else if (expectType === "responseTime") {
-            const threshold = payload.threshold || payload.value;
-            if (apiState.responseTime > parseInt(threshold, 10))
+            const threshold = validateResponseTimeThreshold(payload.threshold ?? payload.value)!;
+            if (apiState.responseTime > threshold)
               throw new Error(
                 `API Assertion Failed: Expected response time to be less than ${threshold}ms, but got ${apiState.responseTime}ms`,
               );
@@ -1358,6 +1416,7 @@ export class FlowWorker extends EventEmitter {
                 ? [{ condition: payload.condition, value: payload.value }]
                 : [];
 
+            validateApiAssertions(assertionsArray);
             for (const assertion of assertionsArray) {
               const condition = assertion.condition;
               const rawExpected = assertion.value;
@@ -1500,12 +1559,12 @@ export class FlowWorker extends EventEmitter {
 
                 if (
                   ["equals", "contains"].includes(condition) ||
-                  (isToBe && !knownTypes.includes(expectedLower))
+                  ((isToBe || isNegated) && !knownTypes.includes(expectedLower))
                 ) {
                   const strActual = String(actualValue);
                   const isEquals =
                     condition === "equals" ||
-                    (isToBe && !knownTypes.includes(expectedLower));
+                    ((isToBe || isNegated) && !knownTypes.includes(expectedLower));
 
                   if (isEquals) {
                     const match = strActual === rawExpected;

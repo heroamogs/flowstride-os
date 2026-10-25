@@ -1,0 +1,93 @@
+{
+  "metadata": {
+    "flowName": "Profile review \u2014 intentional mismatch",
+    "version": "1.0",
+    "environment": "Local",
+    "testPlan": "TP-PROFILE-01",
+    "lastUpdatedBy": "Workflow fixture"
+  },
+  "nodes": [
+    {
+      "id": 1,
+      "x": 80,
+      "y": 160,
+      "width": 280,
+      "height": 150,
+      "visual_step": "1",
+      "title": "Open the sample profile",
+      "description": "Disposable local example data.",
+      "steps": "<p>Open http://127.0.0.1:4107/profile in your application browser.</p>",
+      "expected_result": "<p>The Display name field is visible.</p>",
+      "references": "",
+      "priority": "High",
+      "defect_report": "",
+      "defect_media": "",
+      "assigned_to": "",
+      "is_active": false
+    },
+    {
+      "id": 2,
+      "x": 430,
+      "y": 160,
+      "width": 280,
+      "height": 150,
+      "visual_step": "2",
+      "title": "Update the display name",
+      "description": "Disposable local example data.",
+      "steps": "<p>Enter Lola Idowu and click Save profile.</p>",
+      "expected_result": "<p>The page shows Saved as A Different Person.</p>",
+      "references": "",
+      "priority": "High",
+      "defect_report": "",
+      "defect_media": "",
+      "assigned_to": "",
+      "is_active": false
+    },
+    {
+      "id": 3,
+      "x": 780,
+      "y": 160,
+      "width": 280,
+      "height": 150,
+      "visual_step": "3",
+      "title": "Reopen the profile",
+      "description": "Disposable local example data.",
+      "steps": "<p>Reload the profile page.</p>",
+      "expected_result": "<p>The Display name field still contains Lola Idowu.</p>",
+      "references": "",
+      "priority": "Low",
+      "defect_report": "",
+      "defect_media": "",
+      "assigned_to": "",
+      "is_active": false
+    }
+  ],
+  "groups": [],
+  "texts": [],
+  "connections": [
+    {
+      "id": 4,
+      "start_x": 360,
+      "start_y": 235,
+      "end_x": 430,
+      "end_y": 235,
+      "start_node_id": 1,
+      "end_node_id": 2,
+      "start_anchor": "Right",
+      "end_anchor": "Left",
+      "is_active": false
+    },
+    {
+      "id": 5,
+      "start_x": 710,
+      "start_y": 235,
+      "end_x": 780,
+      "end_y": 235,
+      "start_node_id": 2,
+      "end_node_id": 3,
+      "start_anchor": "Right",
+      "end_anchor": "Left",
+      "is_active": false
+    }
+  ]
+}

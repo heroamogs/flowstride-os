@@ -1,3 +1,4 @@
+import { AssertionDetails } from "./AssertionDetails";
 import { useEffect, useState } from 'react';
 import { flowStep, lastCapturedStep } from '../utils/flowHistory';
 import {
@@ -269,8 +270,9 @@ export const BrowserView = () => {
                     marginTop: "2px",
                   }}
                 >
-                  {selectedStep?.command}
+                  {selectedStep?.commandLabel || selectedStep?.command}
                   {selectedEvidence?.profile && <span> · Profile: {selectedEvidence.profile}</span>}
+                  <AssertionDetails result={selectedEvidence?.assertion} />
                   {(selectedStep?.attemptHistory?.length || 0) > 1 && <select aria-label="History attempt" value={historyAttempt || selectedStep?.attempt || 1} onChange={event => setHistoryAttempt(Number(event.target.value))} style={{ marginLeft: 10, color: 'white', background: '#1e293b' }}>
                     {selectedStep!.attemptHistory!.map(item => <option key={item.attempt} value={item.attempt}>Attempt {item.attempt} · {item.status}</option>)}
                   </select>}

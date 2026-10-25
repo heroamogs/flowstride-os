@@ -1,0 +1,23 @@
+Feature: Microphone and transcript UI fixture
+Scenario: Capture a known microphone signal
+Given "Configure a PCM WAV before browser startup"
+  flow.injectAudio "workflow-examples/audio-to-text/fixtures/microphone-tone.wav";
+  flow.browser.permissions {
+    "permissions": [
+      "microphone"
+    ]
+  };
+  flow.open "/audio";
+When "Start recording"
+  flow.click button "Start recording";
+  flow.expect visible "Recording active";
+When "Allow the fixture audio to play and stop"
+  flow.waitForPipeline;
+  flow.click button "Stop recording";
+Then "The simulated transcription result is displayed"
+  flow.expect transcript contains "This phrase was never produced.";
+  flow.assert.that {
+    "selector": "#transcript",
+    "condition": "text",
+    "value": "Fixture transcript: audio received."
+  };

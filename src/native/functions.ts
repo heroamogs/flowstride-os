@@ -1,3 +1,4 @@
+import { AssertionFailure, assertionCheck, reportAssertion, diagnosticValue, type AssertionResult, type AssertionReporter } from '../reporting/assertion_result';
 import { z } from 'zod';
 import type { Page, Disposable } from 'playwright';
 import { positive, name, poll } from './validation';
@@ -25,17 +26,17 @@ function install(data: z.infer<typeof schema>) {
   registry[data.name] = { calls, restore: () => { if (own) Object.defineProperty(object, key, own); else delete object[key]; } };
 }
 export class NativeFunctions {
-  private installed = new Map<string, { name:string; page: Page; script?: Disposable }>();
+  private installed = new Map<string, { name:string; target:string; page: Page; script?: Disposable }>();
   private pages = new WeakMap<Page,number>(); private counter = 0;
   private key(page: Page, name: string) { if (!this.pages.has(page)) this.pages.set(page, ++this.counter); return `${this.pages.get(page)}:${name}`; }
-  async execute(page: Page, action: string, input: unknown, timeout: number) {
+  async execute(page: Page, action: string, input: unknown, timeout: number, reporter?: AssertionReporter) {
     if (action === 'install') {
       const data = schema.parse(input);
       if (this.installed.has(this.key(page,data.name))) throw new Error('Function double name already exists; restore it first.');
       const script = data.beforeLoad ? await page.addInitScript(install, data) : undefined;
       try { if (!data.beforeLoad || page.url() !== 'about:blank') await page.evaluate(install, data); }
       catch (error) { await script?.dispose(); throw error; }
-      this.installed.set(this.key(page,data.name), { name:data.name, page, script }); return;
+      this.installed.set(this.key(page,data.name), { name:data.name, target:data.target, page, script }); return;
     }
     if (action === 'restore') {
       const data = z.object({ name }).strict().parse(input), entry = this.installed.get(this.key(page,data.name));
@@ -47,10 +48,25 @@ export class NativeFunctions {
     if (action === 'expect') {
       const data = z.object({ name, count: z.number().int().nonnegative().optional(), minCount: z.number().int().nonnegative().optional(), args: z.array(z.unknown()).optional(), timeout: positive.optional() }).strict().parse(input);
       if (!['count','minCount','args'].some(key => key in data)) throw new Error('Provide a call count or expected arguments.');
-      await poll(async () => {
-        const calls = await page.evaluate(name => (window as any)[Symbol.for('flowstride.function-doubles')]?.[name]?.calls, data.name);
-        return Array.isArray(calls) && (data.count === undefined || calls.length === data.count) && (data.minCount === undefined || calls.length >= data.minCount) && (data.args === undefined || calls.some(call => isDeepStrictEqual(call, data.args)));
-      }, data.timeout ?? timeout, `function double ${data.name}`); return;
+      const started=Date.now(),limit=data.timeout??timeout;
+      const sensitive = /auth|login|password|passcode|secret|token|cookie|api.?key|otp/i.test(this.installed.get(this.key(page,data.name))?.target || data.name);
+      let latest:AssertionResult=reportAssertion('stub.expect','function double '+JSON.stringify(data.name),[{key:'calls',label:'Recorded calls available',status:'running'}],reporter,{status:'running',timeout:limit,elapsed:0});
+      let closed=false;
+      try{
+        await poll(async()=>{
+          const calls=await page.evaluate(name=>(window as any)[Symbol.for('flowstride.function-doubles')]?.[name]?.calls,data.name);
+          const checks=[assertionCheck('calls','Recorded calls available',Array.isArray(calls),'recorded calls',Array.isArray(calls)?calls.length:'No function double found on this page')];
+          if(Array.isArray(calls)){
+            if(data.count!==undefined)checks.push(assertionCheck('count','call count',calls.length===data.count,data.count,calls.length));
+            if(data.minCount!==undefined)checks.push(assertionCheck('minCount','minimum call count',calls.length>=data.minCount,data.minCount,calls.length));
+            if(data.args!==undefined)checks.push(assertionCheck('args','matching call arguments',calls.some(call=>isDeepStrictEqual(call,data.args)),sensitive?"[REDACTED]":data.args,sensitive?"[REDACTED]":calls));
+          }
+          if(!closed)latest=reportAssertion('stub.expect','function double '+JSON.stringify(data.name),checks,reporter,{status:'running',timeout:limit,elapsed:Date.now()-started});
+          return checks.every(check=>check.status==='passed');
+        },limit,`function double ${data.name}`);
+        closed=true;reporter?.({...latest,status:'passed',elapsed:Date.now()-started});
+      }catch(error){closed=true;const result:AssertionResult={...latest,status:'failed',elapsed:Date.now()-started,reason:diagnosticValue(error instanceof Error?error.message:String(error))};if(!result.checks.some(check=>check.status==='failed'))result.checks.push({key:'read',label:'Recorded calls could be read',status:'failed',reason:result.reason});reporter?.(result);throw new AssertionFailure(result);}
+      return;
     }
     throw new Error(`Unknown stub action: ${action}`);
   }
