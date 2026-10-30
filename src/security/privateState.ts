@@ -16,9 +16,13 @@ function owned(info: fs.Stats, file: string, directory: boolean) {
 export const WINDOWS_PRIVATE_ACL = String.raw`
 $ErrorActionPreference = 'Stop'
 $target = $env:FLOWSTRIDE_PRIVATE_PATH
-$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+$sid = $identity.User
 $current = Get-Acl -LiteralPath $target
-if ($current.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) { throw 'Private state must be owned by the current user' }
+$owner = $current.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+# Elevated Windows tokens may create files owned by their default owner group.
+# Accept only this token's own default owner, then normalize ownership to its user.
+if ($owner -ne $sid.Value -and $owner -ne $identity.Owner.Value) { throw 'Private state must be owned by the current user or token default owner' }
 if ($env:FLOWSTRIDE_PRIVATE_KIND -eq 'directory') {
   $acl = New-Object System.Security.AccessControl.DirectorySecurity
   $inheritance = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
@@ -33,7 +37,7 @@ $acl.AddAccessRule($rule)
 Set-Acl -LiteralPath $target -AclObject $acl
 $check = Get-Acl -LiteralPath $target
 $rules = @($check.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
-if (-not $check.AreAccessRulesProtected -or $rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid.Value -or $rules[0].AccessControlType -ne 'Allow') { throw 'Private ACL verification failed' }
+if ($check.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value -or -not $check.AreAccessRulesProtected -or $rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid.Value -or $rules[0].AccessControlType -ne 'Allow') { throw 'Private ACL verification failed' }
 `;
 export function restrictWindowsPath(file: string, directory: boolean, run: typeof execFileSync = execFileSync) {
   try {
