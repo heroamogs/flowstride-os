@@ -43,7 +43,8 @@ export function restrictWindowsPath(file: string, directory: boolean, run: typeo
   try {
     const executable = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
     run(executable, ['-NoProfile', '-NonInteractive', '-Command', WINDOWS_PRIVATE_ACL], {
-      env: { ...process.env, FLOWSTRIDE_PRIVATE_PATH: file, FLOWSTRIDE_PRIVATE_KIND: directory ? 'directory' : 'file' },
+      // Do not inherit PowerShell 7/user module paths into system Windows PowerShell 5.
+      env: { ...process.env, PSModulePath: path.join(path.dirname(executable), 'Modules'), FLOWSTRIDE_PRIVATE_PATH: file, FLOWSTRIDE_PRIVATE_KIND: directory ? 'directory' : 'file' },
       timeout: 10000, stdio: 'pipe', maxBuffer: 65536,
     });
   } catch { throw new PrivateStateError('Could not establish owner-only Windows access for private state. Check file ownership and ACL support.'); }
