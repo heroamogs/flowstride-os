@@ -1,37 +1,33 @@
-import * as fs from "fs";
-import * as path from "path";
+import { ensurePrivateDirectory, privateStatePath, readPrivateState, writePrivateState, stateSessionFile } from "../security/privateState";
 
 export class PersistentVault {
   private vaultPath: string;
 
-  constructor() {
-    this.vaultPath = path.join(process.cwd(), ".flowstride", "vault");
+  constructor(private projectRoot: string = process.cwd()) {
+    this.vaultPath = privateStatePath(this.projectRoot, "vault");
     this.ensureVaultExists();
   }
 
   private ensureVaultExists(): void {
-    if (!fs.existsSync(this.vaultPath)) {
-      fs.mkdirSync(this.vaultPath, { recursive: true });
-    }
+    ensurePrivateDirectory(this.projectRoot, "vault");
   }
 
   public save(name: string, data: any): void {
-    const filePath = path.join(this.vaultPath, `${name}.json`);
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    writePrivateState(this.projectRoot, "vault/" + stateSessionFile(name), JSON.stringify(data, null, 2));
   }
 
   public load(name: string): any | null {
-    const filePath = path.join(this.vaultPath, `${name}.json`);
-    if (!fs.existsSync(filePath)) return null;
+    const value = readPrivateState(this.projectRoot, "vault/" + stateSessionFile(name));
+    if (value === undefined) return null;
 
     try {
-      return JSON.parse(fs.readFileSync(filePath, "utf8"));
+      return JSON.parse(value);
     } catch {
       return null;
     }
   }
 
   public exists(name: string): boolean {
-    return fs.existsSync(path.join(this.vaultPath, `${name}.json`));
+    return readPrivateState(this.projectRoot, "vault/" + stateSessionFile(name)) !== undefined;
   }
 }

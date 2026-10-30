@@ -1,3 +1,4 @@
+import { validateEvidencePolicy } from '../security/evidence';
 import { parseShard } from './distribution';
 import { validateContextOptions } from '../native/validation';
 import { projectPath } from '../utils/projectPaths';
@@ -27,6 +28,7 @@ export function loadNativeConfig(root: string, options: Record<string, any>): Fl
   config.browserOptions = validateContextOptions(input.browserOptions, config.browser, root);
   if (!Number.isSafeInteger(config.retries) || config.retries < 0 || config.retries > 10) throw new Error('retries must be an integer from 0 to 10.');
   for (const key of ['trace','har','domSnapshots','failOnFlaky']) if (config[key] !== undefined && typeof config[key] !== 'boolean') throw new Error(`${key} must be boolean.`);
+  validateEvidencePolicy(config.security?.evidence);
   parseShard(config.shard);
   if (config.ci && config.updateBaselines) throw new Error('Baseline updates are not allowed in CI.');
   if (config.ci && input.cloudSync !== true) config.isCloudSyncActive = false;
@@ -43,6 +45,7 @@ export function loadNativeConfig(root: string, options: Record<string, any>): Fl
     const resolved = projectPath(root, config[key]);
     const relative = path.relative(root, resolved);
     if ((key === 'artifactsDir' && !relative) || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error(`${key} must be a directory inside the project.`);
+    if (key === 'artifactsDir' && relative.split(path.sep).some(part => ['.flowstride','.git','node_modules'].includes(part.toLowerCase()))) throw new Error('artifactsDir must not include credentials, Git metadata or dependencies.');
     config[key] = resolved;
   }
   if (config.viewport && (!Number.isSafeInteger(config.viewport.width) || config.viewport.width < 1 || !Number.isSafeInteger(config.viewport.height) || config.viewport.height < 1)) throw new Error('viewport requires positive integer width and height.');

@@ -10,7 +10,7 @@ const register=${registerGame.toString()};register({readState:()=>state,testMode
 </script></body></html>`;
 async function fixture(handler){const server=http.createServer(handler);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));return{url:`http://127.0.0.1:${server.address().port}`,close:()=>new Promise(resolve=>server.close(resolve))};}
 for(const device of ['desktop','phone','landscape'])test(`native game input, visual/state assertions and cleanup on ${device}`,async()=>{
- const server=await fixture((_req,res)=>res.end(html));const directory=fs.mkdtempSync(path.join(os.tmpdir(),'flowstride-game-'));const config={headless:true,ci:true,timeout:3000,device,recordVideo:false,artifactsDir:directory};const web=new WebAdapter(config);
+ const server=await fixture((_req,res)=>res.end(html));const projectRoot=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'flowstride-game-'))),directory=path.join(projectRoot,'evidence');const config={projectRoot,headless:true,ci:true,timeout:3000,device,recordVideo:false,artifactsDir:directory};const web=new WebAdapter(config);
  try{await web.initialise();const page=web.getPage();await page.goto(server.url);const game=new GameSDK(()=>page,config);
   await game.snapshot({name:'before',canvas:'#game'});await game.expectVisual({name:'before',canvas:'#game'});await game.tap({canvas:'#game',x:.5,y:.5});await game.expectState({path:'score',equals:1});
   const ratio=await game.expectVisual({name:'before',canvas:'#game',minChange:.9});assert(ratio>.9);

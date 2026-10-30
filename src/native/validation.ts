@@ -1,3 +1,4 @@
+import { evidenceDirectory, prepareEvidenceFile } from '../security/evidence';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -39,8 +40,8 @@ export function evidencePath(config: FlowstrideConfig, file: string): string {
   const safe = name.parse(file);
   const root = config.projectRoot || process.cwd();
   const dir = projectPath(root, config.artifactsDir || 'flowstride-artifacts');
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  return projectPath(root, path.join(dir, artifactPrefix(config.testFile) + safe));
+  evidenceDirectory(config, dir);
+  return prepareEvidenceFile(config, path.join(dir, artifactPrefix(config.testFile) + safe));
 }
 export function readProjectFile(config: FlowstrideConfig, file: string, maxSize = 20 * 1024 * 1024): Buffer {
   const absolute = projectPath(config.projectRoot || process.cwd(), file);

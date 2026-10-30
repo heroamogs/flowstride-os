@@ -1,7 +1,11 @@
+import { unresolvedReplayFields } from "../security/manualReplay";
+import { excludedRequestHeaders } from "./requestHeaders";
 export class ReplayRequestError extends Error {
-  constructor(message: string) {
+  public readonly code: string;
+  constructor(message: string, code = 'REPLAY_INVALID_REQUEST') {
     super(message);
     this.name = 'ReplayRequestError';
+    this.code = code;
   }
 }
 
@@ -32,16 +36,7 @@ export function buildReplayRequest(payload: any): { url: string; options: Reques
 
   // Fetch owns the destination, framing and supported compression. Recompute
   // Content-Length after edits and remove all Connection-nominated fields too.
-  const excluded = new Set([
-    'host', 'content-length', 'accept-encoding', 'connection', 'keep-alive',
-    'proxy-connection', 'proxy-authenticate', 'proxy-authorization', 'te',
-    'trailer', 'transfer-encoding', 'upgrade', 'expect',
-  ]);
-  for (const [name, value] of Object.entries(supplied)) {
-    if (name.toLowerCase() === 'connection' && typeof value === 'string') {
-      for (const field of value.split(',')) excluded.add(field.trim().toLowerCase());
-    }
-  }
+  const excluded = excludedRequestHeaders(supplied);
   const headers = new Headers();
   for (const [name, value] of Object.entries(supplied)) {
     if (name.startsWith(':') || excluded.has(name.toLowerCase())) continue;
@@ -55,5 +50,7 @@ export function buildReplayRequest(payload: any): { url: string; options: Reques
     try { options.body = typeof payload.body === 'string' ? payload.body : JSON.stringify(payload.body); }
     catch { throw new ReplayRequestError('Replay body cannot be serialized.'); }
   }
+  const pending = unresolvedReplayFields({ url: url.href, headers: Object.fromEntries(headers), body: options.body });
+  if (pending.length) throw new ReplayRequestError('Replace redacted values before sending: ' + pending.join(', ') + '. Original captured credentials are not reused.', 'REPLAY_REDACTED_FIELDS');
   return { url: url.href, options };
 }

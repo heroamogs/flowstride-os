@@ -1,3 +1,4 @@
+import { localDefectPreviewUrl } from '../../../manual/mediaReference';
 import { useState, useEffect, useRef } from "react";
 import {
   CheckCircle2,
@@ -381,7 +382,7 @@ export const TestReportPanel = ({
 
             {previewMedia.type === "video" ? (
               <video
-                src={previewMedia.url}
+                src={localDefectPreviewUrl(previewMedia.url)}
                 controls
                 autoPlay
                 style={{
@@ -393,7 +394,7 @@ export const TestReportPanel = ({
               />
             ) : (
               <img
-                src={previewMedia.url}
+                src={localDefectPreviewUrl(previewMedia.url)}
                 alt="Defect Preview"
                 style={{
                   maxWidth: "100%",
@@ -1369,7 +1370,7 @@ export const TestReportPanel = ({
                           >
                             {isVid ? (
                               <video
-                                src={url}
+                                src={localDefectPreviewUrl(url)}
                                 style={{
                                   width: "100%",
                                   height: "100%",
@@ -1388,7 +1389,7 @@ export const TestReportPanel = ({
                               />
                             ) : (
                               <img
-                                src={url}
+                                src={localDefectPreviewUrl(url)}
                                 alt={`Defect Evidence ${i}`}
                                 style={{
                                   width: "100%",

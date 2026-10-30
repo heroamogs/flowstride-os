@@ -1,3 +1,4 @@
+import { evidenceDirectory, writeEvidence, protectEvidenceTree, exportEvidence } from '../security/evidence';
 import { assertionText } from '../reporting/assertion_result';
 import { executionPlan } from './distribution';
 import { createHash } from 'node:crypto';
@@ -20,8 +21,9 @@ function xml(value: unknown) { return String(value).replace(/[\x00-\x08\x0b\x0c\
 export async function runNativeCI(worker: any, orchestrator: any, target: string, config: FlowstrideConfig, engine: string): Promise<NativeRunResult> {
   const started = Date.now();
   const artifactRoot = config.artifactsDir!;
-  fs.mkdirSync(artifactRoot, { recursive: true });
+  evidenceDirectory(config, artifactRoot);
   const directory = fs.mkdtempSync(path.join(artifactRoot, 'run-'));
+  evidenceDirectory(config, directory);
   config.artifactsDir = directory;
   const plan = executionPlan(target, config);
   const browsers = new Map<string, any>();
@@ -48,7 +50,7 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
       steps.set(key, { ...steps.get(key), ...p, screenshot: undefined });
       if (p.status === 'failed' && typeof p.screenshot === 'string') {
         const match = p.screenshot.match(/^data:image\/(png|jpeg);base64,(.+)$/s) || (/^[A-Za-z0-9+/=\r\n]+$/.test(p.screenshot) ? ['', 'jpeg', p.screenshot] : null);
-        if (match) fs.writeFileSync(path.join(directory, `${safeName(p.fileName)}-${safeName(p.id)}.${match[1] === 'jpeg' ? 'jpg' : 'png'}`), Buffer.from(match[2], 'base64'));
+        if (match) writeEvidence(config, path.join(directory, `${safeName(p.fileName)}-${safeName(p.id)}.${match[1] === 'jpeg' ? 'jpg' : 'png'}`), Buffer.from(match[2], 'base64'));
       }
     }
     if (data.type === 'FILE_COMPLETE' || data.type === 'FILE_FAILED') completed.add(p.fileName);
@@ -79,7 +81,7 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
       const settings = config.webServer;
       const probe = async () => { try { return (await fetch(settings.url, { signal: AbortSignal.timeout(1000) })).ok; } catch { return false; } };
       if (await probe()) throw new Error('webServer readiness URL is already serving; refusing to test an unowned server.');
-      const output = fs.openSync(path.join(directory, 'web-server.log'), 'a');
+      const output = fs.openSync(path.join(directory, 'web-server.log'), 'a', 0o600);
       try { server = spawn(settings.command, { cwd: settings.cwd, shell: true, detached: process.platform !== 'win32', stdio: ['ignore', output, output] }); }
       finally { fs.closeSync(output); }
       let spawnError: Error | undefined;
@@ -134,9 +136,10 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
       }
     }
   }
+  protectEvidenceTree(config, directory);
   config.artifactsDir = artifactRoot;
   fs.writeFileSync(path.join(artifactRoot, 'timings.json'), JSON.stringify(timings, null, 2));
-  fs.writeFileSync(path.join(artifactRoot, 'summary.json'), JSON.stringify(result, null, 2));
+  fs.writeFileSync(path.join(artifactRoot, 'summary.json'), JSON.stringify(exportEvidence(result), null, 2));
   const cases = results.map(step => `<testcase classname="${xml(step.fileName)}" name="${xml(step.description || step.id)}">${step.status === 'failed' ? `<failure message="${xml(step.error || 'Test step failed')}"/>` : ['skipped','not_tested'].includes(step.status) ? '<skipped/>' : ''}${step.assertion ? `<system-out>${xml(assertionText(step.assertion))}</system-out>` : ''}</testcase>`);
   for (const error of errors) cases.push(`<testcase name="execution"><error message="${xml(error)}"/></testcase>`);
   if (incomplete) cases.push(`<testcase name="completion"><failure message="${incomplete} incomplete steps"/></testcase>`);
@@ -147,5 +150,6 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
     for (const error of errors) failures.push(`<pre>${xml(error)}</pre>`);
     if (failures.length) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,'\n'+failures.join('\n')+'\n');
   }
+  protectEvidenceTree(config, artifactRoot);
   return result;
 }

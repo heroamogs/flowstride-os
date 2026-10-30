@@ -66,7 +66,7 @@ Workflow generation is explicit; package installation does not create a workflow
 
 ## Local dashboard and manual testing
 
-Interactive runs open a dashboard for execution, per-flow screen history, network inspection and API Replay. The local cURL preview remains redacted; its Copy control copies the original captured request when it is still available in the interactive debugger.
+Interactive runs open a dashboard for execution, per-flow screen history, network inspection and API Replay. The local cURL preview remains redacted; Copy masked cURL copies a sanitized request template. Captured emails, passwords, authorization and cookies stay masked. Replace required values manually before Replay or running the copied command; Flowstride rejects unresolved placeholders in Replay and never silently reuses original credentials. The emailVerified response status retains its real value and type.
 
 For visual manual test design and execution:
 
@@ -86,7 +86,7 @@ The OS CLI selects a compatible, authorized Cloud engine when available and fall
 
 ## Test data and artifacts
 
-Flowstride redacts recognized credentials in logs and reports. Redaction cannot guarantee removal of arbitrary application data, and screenshots or videos can contain sensitive information. Use appropriate test data and restrict access to artifacts, persisted sessions and raw requests copied for debugging.
+Flowstride redacts recognized credentials in logs and reports. Redaction cannot guarantee removal of arbitrary application data, and screenshots or videos can contain sensitive information. Use appropriate test data and restrict access to artifacts, persisted sessions and requests copied for debugging after you supply credentials.
 
 Keep `.flowstride/` and `flowstride-artifacts/` out of version control. CI Cloud reporting is disabled by default and requires explicit configuration and valid credentials.
 

@@ -1,3 +1,5 @@
+import * as os from 'os';
+import { servePrivateDefect } from '../../manual/privateMedia';
 import { isLocalWorkspaceRequest } from '../../security/localWorkspace';
 import { projectPath } from '../../utils/projectPaths';
 import { readManualPayload, ManualInputError } from '../../manual/security';
@@ -127,6 +129,11 @@ export async function startManualWorkspaceServer(): Promise<void> {
       `http://${req.headers.host || "localhost"}`,
     );
     const pathname = urlObj.pathname;
+
+    if (req.method === 'GET' && pathname === '/api/defect-preview') {
+      await servePrivateDefect(req, res, {root:process.cwd(),home:os.homedir(),env:process.env});
+      return;
+    }
 
     // ============================================================================
     // VAULT 1: DESIGN REFERENCES (/media) -> STRICTLY LOCAL ONLY

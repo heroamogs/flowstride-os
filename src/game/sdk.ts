@@ -1,3 +1,4 @@
+import { prepareEvidenceFile, evidenceDirectory } from '../security/evidence';
 import { artifactPrefix, projectPath } from '../utils/projectPaths';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -87,9 +88,9 @@ export class GameSDK {
     const name = typeof options === 'string' ? options : options.name;
     if (typeof name !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error('Checkpoint name must use letters, digits, underscores or hyphens.');
     const directory = this.config.artifactsDir || path.resolve('flowstride-artifacts');
-    fs.mkdirSync(directory, { recursive: true });
+    evidenceDirectory(this.config, directory);
     const prefix = artifactPrefix(this.config.testFile);
-    const file = path.join(directory, prefix+name+'.png');
+    const file = prepareEvidenceFile(this.config, path.join(directory, prefix+name+'.png'));
     if (typeof options === 'object' && options.canvas) await this.page().locator(options.canvas).screenshot({ path: file });
     else await this.page().screenshot({ path: file });
     return file;

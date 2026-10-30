@@ -1,3 +1,4 @@
+import { evidenceDirectory, protectEvidenceTree } from '../../security/evidence';
 import { evidencePath, validateContextOptions, name as nativeName } from '../../native/validation';
 import { chromium as pinnedChromium, firefox, webkit } from 'playwright';
 import { projectPath } from '../../utils/projectPaths';
@@ -72,6 +73,7 @@ export class WebAdapter {
     const profile = this.profiles.get(profileName);
     if (!profile?.tracing || !profile.tracePath) throw new Error('Trace is not active.');
     await profile.context.tracing.stop({ path: profile.tracePath }); profile.tracing = false;
+    protectEvidenceTree(this.config, this.config.artifactsDir || 'flowstride-artifacts');
     return profile.tracePath;
   }
   private async finishProfile(key: string, videoTargetPath?: string): Promise<void> {
@@ -80,6 +82,7 @@ export class WebAdapter {
     if (profile.tracing) await this.endTrace(key);
     const video = profile.page.video();
     await profile.context.close();
+    if (this.config.har) protectEvidenceTree(this.config, this.config.artifactsDir || 'flowstride-artifacts');
     if (video) {
       const target = videoTargetPath || (key !== 'default' ? evidencePath(this.config, `${key}-${Date.now()}.webm`) : undefined);
       if (target) await video.saveAs(target);
@@ -210,9 +213,9 @@ export class WebAdapter {
       throw new Error('The launched browser does not match the requested browser.');
     }
 
-    const videoDir = projectPath(process.cwd(), path.join('.flowstride', 'videos'));
+    const videoDir = projectPath(this.config.projectRoot || process.cwd(), path.join('.flowstride', 'videos'));
 
-    if (!fs.existsSync(videoDir)) fs.mkdirSync(videoDir, { recursive: true });
+    evidenceDirectory(this.config, videoDir);
 
     const profile = this.config.device === 'phone' || this.config.device === 'landscape'
       ? { ...devices['Pixel 7'], viewport: this.config.device === 'landscape' ? { width: 844, height: 390 } : { width: 390, height: 844 } }

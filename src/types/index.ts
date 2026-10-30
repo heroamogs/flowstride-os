@@ -40,6 +40,7 @@ export interface FlowstrideConfig {
   };
   security?: {
     sensitiveKeys?: string[];
+    evidence?: { screenshots?: boolean; cloudVideo?: boolean };
   };
   pluginsDir?: string;
 }

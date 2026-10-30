@@ -1,3 +1,4 @@
+import { writeEvidence } from '../security/evidence';
 import { projectPath, artifactPrefix } from '../utils/projectPaths';
 import { withDeadline } from '../ci/deadline';
 import fs from 'node:fs';
@@ -92,9 +93,9 @@ export class PluginManager {
           attach: (name: string, data: string | Buffer) => {
             if (!/^[a-zA-Z0-9_.-]+$/.test(name) || name === '.' || name === '..') throw new Error('Attachment name must be a simple filename.');
             const directory = this.config.artifactsDir || path.resolve('flowstride-artifacts');
-            fs.mkdirSync(directory, { recursive: true });
+
             const prefix = artifactPrefix(this.config.testFile);
-            const file = path.join(directory, prefix+name); fs.writeFileSync(file, data); return file;
+            return writeEvidence(this.config, path.join(directory, prefix+name), data);
           } },
         api: {
           get: (url: string, headers?: Record<string, string>) =>
