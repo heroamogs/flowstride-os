@@ -9,6 +9,15 @@ test('all evidence formats are private even with a permissive umask; existing mo
   fs.chmodSync(path.join(root,'evidence'),0o755);fs.chmodSync(path.join(root,'evidence/trace.zip'),0o644);protectEvidenceTree(config,path.join(root,'evidence'));if(process.platform!=='win32'){assert.equal(fs.statSync(path.join(root,'evidence')).mode&0o777,0o700);assert.equal(fs.statSync(path.join(root,'evidence/trace.zip')).mode&0o777,0o600);}
  }finally{process.umask(old);cleanup(root);}
 });
+test('rewriting evidence truncates the verified handle and rejects swapped hardlinks before mutation',()=>{
+ const root=temp(),outside=temp(),file=path.join(root,'evidence/run.json'),sentinel=path.join(outside,'sentinel'),originalOpen=fs.openSync;
+ try{
+  writeEvidence({projectRoot:root},file,'long-fixture-value');writeEvidence({projectRoot:root},file,'new');assert.equal(fs.readFileSync(file,'utf8'),'new');
+  fs.writeFileSync(sentinel,'must-remain-unchanged');let swapped=false;
+  fs.openSync=function(target,flags,...args){if(target===file&&typeof flags==='number'&&!swapped){swapped=true;fs.unlinkSync(file);fs.linkSync(sentinel,file);}return originalOpen.call(this,target,flags,...args);};
+  assert.throws(()=>writeEvidence({projectRoot:root},file,'unsafe'),/changed|unsafe/);assert.equal(fs.readFileSync(sentinel,'utf8'),'must-remain-unchanged');
+ }finally{fs.openSync=originalOpen;cleanup(root);cleanup(outside);}
+});
 for(const kind of ['directory-link','file-link','hardlink','outside','project-root'])test(`evidence rejects ${kind} without reading or overwriting its target`,()=>{
  const root=temp(),outside=temp(),file=path.join(outside,'sentinel');fs.writeFileSync(file,'unchanged');
  try{fs.mkdirSync(path.join(root,'evidence'));let action;

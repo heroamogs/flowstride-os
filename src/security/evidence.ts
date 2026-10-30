@@ -35,8 +35,15 @@ export function prepareEvidenceFile(config: Pick<FlowstrideConfig, 'projectRoot'
 }
 export function writeEvidence(config: Pick<FlowstrideConfig, 'projectRoot'> | undefined, target: string, data: string | Buffer) {
   const file = prepareEvidenceFile(config, target);
-  const fd = fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_TRUNC | (fs.constants.O_NOFOLLOW || 0));
-  try { fs.writeFileSync(fd, data); } finally { fs.closeSync(fd); }
+  const expected = fs.lstatSync(file);
+  // Windows/libuv can reject O_TRUNC without O_CREAT. Open the existing file
+  // without creating it, validate its handle, then truncate that exact handle.
+  const fd = fs.openSync(file, fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW || 0));
+  try {
+    const opened = fs.fstatSync(fd);
+    if (!opened.isFile() || opened.nlink !== 1 || opened.dev !== expected.dev || opened.ino !== expected.ino) throw new Error('Evidence file changed or became unsafe before writing.');
+    fs.ftruncateSync(fd, 0); fs.writeFileSync(fd, data);
+  } finally { fs.closeSync(fd); }
   protectPrivatePath(file, false); return file;
 }
 export function protectEvidenceTree(config: Pick<FlowstrideConfig, 'projectRoot'> | undefined, directory: string) {
