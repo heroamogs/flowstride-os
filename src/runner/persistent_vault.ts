@@ -1,25 +1,19 @@
-import { projectPath } from '../utils/projectPaths';
-import * as fs from "fs";
-import * as path from "path";
+import { ensurePrivateDirectory, privateStatePath, readPrivateState, writePrivateState, removePrivateState } from "../security/privateState";
 
 export class PersistentVault {
   public vaultPath: string;
   public data: Record<string, any> = {};
 
-  constructor(projectRoot: string = process.cwd()) {
-    this.vaultPath = projectPath(projectRoot, path.join(projectRoot, ".flowstride", "vault.json"));
+  constructor(private projectRoot: string = process.cwd()) {
+    this.vaultPath = privateStatePath(projectRoot, "vault.json");
     this.initialiseVault();
   }
 
   public initialiseVault(): void {
-    const dir = path.dirname(this.vaultPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-
-    if (fs.existsSync(this.vaultPath)) {
+    ensurePrivateDirectory(this.projectRoot);
+    const rawData = readPrivateState(this.projectRoot, "vault.json");
+    if (rawData !== undefined) {
       try {
-        const rawData = fs.readFileSync(this.vaultPath, "utf8");
         this.data = JSON.parse(rawData);
       } catch {
         this.data = {};
@@ -41,14 +35,12 @@ export class PersistentVault {
   }
 
   public syncToDisk(): void {
-    fs.writeFileSync(this.vaultPath, JSON.stringify(this.data, null, 2));
+    writePrivateState(this.projectRoot, "vault.json", JSON.stringify(this.data, null, 2));
   }
 
   public clear(): void {
     this.data = {};
-    if (fs.existsSync(this.vaultPath)) {
-      fs.unlinkSync(this.vaultPath);
-    }
+    removePrivateState(this.projectRoot, "vault.json");
   }
 
   public getAll(): Record<string, any> {

@@ -1,3 +1,5 @@
+import { ResizableFlowPanel } from "./components/ResizableFlowPanel";
+import { DEFAULT_FLOW_PANEL_WIDTH } from "./utils/flowPanelSize";
 import { useState } from "react";
 import { useFlowStore } from "./store";
 
@@ -14,6 +16,7 @@ import { Header } from "./components/Header";
 export default function Home() {
   const { activeView } = useFlowStore();
   const [isTestFlowsOpen, setTestFlowsOpen] = useState(true);
+  const [testFlowsWidth, setTestFlowsWidth] = useState(DEFAULT_FLOW_PANEL_WIDTH);
 
   const [isRightPanelOpen, setRightPanelOpen] = useState(false);
 
@@ -26,23 +29,17 @@ export default function Home() {
       case "Flows":
         return (
           <>
-            <aside
-              style={{
-                width: isTestFlowsOpen ? "280px" : "0px",
-                transition: "width 0.2s ease",
-                overflow: "hidden",
-                backgroundColor: "#0d1117",
-                borderRight: isTestFlowsOpen ? "1px solid #30363d" : "none",
-                flexShrink: 0,
-              }}
+            <ResizableFlowPanel
+              isOpen={isTestFlowsOpen}
+              preferredWidth={testFlowsWidth}
+              onWidthChange={setTestFlowsWidth}
             >
-              <div style={{ width: "280px" }}>
-                <FlowList />
-              </div>
-            </aside>
+              <FlowList />
+            </ResizableFlowPanel>
             <main
               style={{
                 flex: 1,
+                minWidth: 0,
                 display: "flex",
                 flexDirection: "column",
                 height: "100vh",
@@ -108,6 +105,7 @@ export default function Home() {
           display: "flex",
           height: "100vh",
           overflow: "hidden",
+          minWidth: 0,
         }}
       >
         {renderWorkspace()}

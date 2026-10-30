@@ -93,7 +93,7 @@ Existing cookie/local-storage snapshots remain compatible. Older snapshots with 
 
 Each completed flow tab restores its own last captured screen. Selecting an earlier step remembers a separate history cursor for that file. Flows without screenshots show an empty state. New runs clear previous screens and cursors.
 
-The local cURL preview remains `[REDACTED]`. Copy uses the original captured request held in interactive debugger memory. Already-redacted historical data cannot be recovered. CI and Cloud reports retain redaction.
+The local cURL preview remains `[REDACTED]`. Copy masked cURL copies a sanitized request template with email, password, authorization and cookies masked. Supply replacements manually before running that command. Replay also starts masked and rejects unresolved placeholders before sending; it never silently reuses original credentials. Manually entered credentials are re-masked after Send, while `emailVerified` retains its actual value/type. Automated .flow execution still uses configured credentials normally. CI and Cloud reports retain redaction.
 
 Review artifact access and test data: credential redaction does not remove every possible application secret, and screenshots or videos can show sensitive information.
 

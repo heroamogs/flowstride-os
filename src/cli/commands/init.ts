@@ -16,6 +16,7 @@ export async function initAction() {
   const sampleFlowPath = path.join(root, "flows", "example.flow");
   const fixturesReadmePath = path.join(root, "fixtures", "README.md");
   const gitignorePath = path.join(root, ".gitignore");
+  try { const info=fs.lstatSync(gitignorePath); if(!info.isFile() || info.isSymbolicLink() || info.nlink!==1) throw new Error("Refusing to edit a linked or special .gitignore."); } catch(error: any) { if(error.code!=="ENOENT") throw error; }
 
   console.log("\n[Info] Initialising new workspace...");
 
@@ -84,7 +85,7 @@ Store your audio, image, and data assets in this directory.
   }
 
   // 4. Secure the Workspace (.gitignore)
-  const ignorePayload = `\n# Flowstride Execution Data\n.flowstride\nflowstride-artifacts\n`;
+  const ignorePayload = `\n# Flowstride Execution Data\n.flowstride\nflowstride-artifacts\nreports/latest\n`;
   if (!fs.existsSync(gitignorePath)) {
     fs.writeFileSync(gitignorePath, `node_modules\n${ignorePayload}`);
     console.log("[OK] Created .gitignore to secure local session data");

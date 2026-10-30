@@ -1,3 +1,5 @@
+import { replayTemplateFromLog } from "../../security/manualReplay";
+import { redactPayload, redactWorkerPayload } from "../../security/redaction";
 import type { AssertionResult } from '../../reporting/assertion_result';
 import { flowStep, restoredStepId } from './utils/flowHistory';
 import { create } from "zustand";
@@ -173,15 +175,14 @@ export const useFlowStore = create<AppState>((set) => ({
       const log = state.logs.find((l) => l.id === id);
       if (log && (log.type === "REST" || log.type === "GRAPHQL")) {
         const details = log.details || {};
-        const original = details.rawReplayRequest && typeof details.rawReplayRequest === 'object' ? details.rawReplayRequest : undefined;
+        const original = replayTemplateFromLog(details);
         return {
           selectedLogId: id,
           activeReplay: {
             method: original?.method || details.method || 'GET',
             url: original?.url || details.url || '',
             headers: JSON.stringify(original?.headers || details.requestHeaders || {}, null, 2),
-            body: original ? original.body ?? '' : typeof details.requestBody === 'object'
-              ? JSON.stringify(details.requestBody, null, 2) : details.requestBody || '',
+            body: original.body ?? '',
             response: null, status: null, error: null, requestId: null, isLoading: false,
           },
         };
@@ -406,17 +407,10 @@ export const useFlowStore = create<AppState>((set) => ({
       };
     }),
 
-  addLog: (log: LogEvent) =>
-    set((state) => ({
-      logs: [
-        ...state.logs,
-        {
-          ...log,
-          summary: log.summary || "Log entry",
-          status: log.status || "info",
-        },
-      ],
-    })),
+  addLog: (log: LogEvent) => {
+    const safe = redactWorkerPayload('LOG_EVENT', log, [], true);
+    set((state) => ({ logs: [...state.logs, { ...safe, summary: safe.summary || 'Log entry', status: safe.status || 'info' }] }));
+  },
 
   addNetworkLog: (log) =>
     set((state) => ({ networkLogs: [log, ...state.networkLogs] })),
@@ -432,7 +426,7 @@ export const useFlowStore = create<AppState>((set) => ({
   setReplayResponse: (response, status, error = null, requestId) =>
     set((state) => ({
       activeReplay: state.activeReplay && (!requestId || requestId === state.activeReplay.requestId)
-        ? { ...state.activeReplay, response, status, error, isLoading: false }
+        ? { ...state.activeReplay, response: redactPayload(response), status, error, isLoading: false }
         : state.activeReplay,
     })),
 }));

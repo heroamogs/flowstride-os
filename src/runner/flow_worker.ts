@@ -1,3 +1,7 @@
+import { replaySecretValues } from "../security/manualReplay";
+import { redactPayload } from "../security/redaction";
+import { evidenceDirectory, prepareEvidenceFile, protectEvidenceTree, screenshotEvidence } from '../security/evidence';
+import { readPrivateState, writePrivateState, stateSessionFile } from "../security/privateState";
 import { commandSecrets, runtimeFailure } from '../reporting/runtime_failure';
 import { assertionText, commandLabel, failedAssertion, unexecutedAssertion, type AssertionResult } from '../reporting/assertion_result';
 import { validateExpectationType, validateApiAssertions, validateResponseTimeThreshold } from '../parser/assertion_contract';
@@ -137,6 +141,7 @@ export class FlowWorker extends EventEmitter {
     const context: { screenshot?: string; boundingBox?: any } = {};
 
     try {
+      if (!screenshotEvidence(this.config)) return {};
       const buffer = await page.screenshot({ type: "jpeg", quality: 50 });
       context.screenshot = buffer.toString("base64");
     } catch (e) {}
@@ -355,6 +360,7 @@ export class FlowWorker extends EventEmitter {
 
   public async handleReplayRequest(payload: any) {
     const requestId = typeof payload?.requestId === 'string' ? payload.requestId : undefined;
+    const replaySecrets = replaySecretValues(payload);
     try {
       const { url, options } = buildReplayRequest(payload);
       options.signal = AbortSignal.timeout(this.config.timeout || 30000);
@@ -363,13 +369,13 @@ export class FlowWorker extends EventEmitter {
       let responseBody;
       try { responseBody = JSON.parse(text); } catch { responseBody = text; }
       this.broadcast('REPLAY_RES', {
-        status: response.status, responseBody, error: null, requestId,
+        status: response.status, responseBody: redactPayload(responseBody, replaySecrets), error: null, requestId,
         fileName: this.currentFileName,
       });
     } catch (error: any) {
-      const code = error instanceof ReplayRequestError ? 'REPLAY_INVALID_REQUEST'
+      const code = error instanceof ReplayRequestError ? error.code
         : error?.name === 'TimeoutError' ? 'REPLAY_TIMEOUT' : 'REPLAY_NETWORK_ERROR';
-      const message = redactText(String(error?.message || 'Replay request failed'), [this.config.machineToken || '']);
+      const message = redactText(String(error?.message || 'Replay request failed'), [this.config.machineToken || '', ...replaySecrets]);
       this.broadcast('REPLAY_RES', {
         status: null, error: code, requestId,
         responseBody: { error: message, code }, fileName: this.currentFileName,
@@ -559,13 +565,14 @@ export class FlowWorker extends EventEmitter {
               "mock-cloud",
             );
             if (!fs.existsSync(mockCloudDir))
-              fs.mkdirSync(mockCloudDir, { recursive: true });
+              evidenceDirectory(this.config, mockCloudDir);
 
-            const targetVideoPath = path.join(mockCloudDir, `${baseName}.webm`);
+            const targetVideoPath = prepareEvidenceFile(this.config, path.join(mockCloudDir, `${baseName}.webm`));
 
             for (const message of this.web.pageErrors || []) this.broadcast('BROWSER_ERROR', { message, fileName: this.currentFileName });
             await this.native.dispose();
             await this.web.shutdown(targetVideoPath);
+            protectEvidenceTree(this.config, path.dirname(targetVideoPath));
             if (!this.isSilent)
               console.log(
                 chalk.gray(
@@ -597,13 +604,14 @@ export class FlowWorker extends EventEmitter {
               "mock-cloud",
             );
             if (!fs.existsSync(mockCloudDir))
-              fs.mkdirSync(mockCloudDir, { recursive: true });
+              evidenceDirectory(this.config, mockCloudDir);
 
-            const targetVideoPath = path.join(mockCloudDir, `${baseName}.webm`);
+            const targetVideoPath = prepareEvidenceFile(this.config, path.join(mockCloudDir, `${baseName}.webm`));
 
             for (const message of this.web.pageErrors || []) this.broadcast('BROWSER_ERROR', { message, fileName: this.currentFileName });
             await this.native.dispose();
             await this.web.shutdown(targetVideoPath);
+            protectEvidenceTree(this.config, path.dirname(targetVideoPath));
             if (!this.isSilent)
               console.log(
                 chalk.gray(
@@ -634,10 +642,11 @@ export class FlowWorker extends EventEmitter {
     } finally {
       if (this.config.ci && this.isAborted) {
         try {
-          const directory = path.join(process.cwd(), '.flowstride', 'artifacts');
-          fs.mkdirSync(directory, { recursive: true });
+          const directory = path.join(this.config.projectRoot || process.cwd(), '.flowstride', 'artifacts');
+          evidenceDirectory(this.config, directory);
           await this.native.dispose();
-          await this.web.shutdown(path.join(directory, videoFileName(this.currentFileName)));
+          await this.web.shutdown(prepareEvidenceFile(this.config, path.join(directory, videoFileName(this.currentFileName))));
+          protectEvidenceTree(this.config, directory);
         } catch (error: any) { this.broadcast('WORKER_ERROR', { message: error.message }); }
       }
       process.removeListener("SIGINT", sigintHandler);
@@ -1213,27 +1222,9 @@ export class FlowWorker extends EventEmitter {
 
           if (payload.persist) {
             try {
-              const persistDir = path.join(
-                process.cwd(),
-                ".flowstride",
-                "sessions",
-              );
-              if (!fs.existsSync(persistDir)) {
-                fs.mkdirSync(persistDir, { recursive: true });
-              }
-              const persistPath = path.join(persistDir, `${payload.name}.json`);
-              fs.writeFileSync(
-                persistPath,
-                JSON.stringify(hybridState, null, 2),
-                "utf-8",
-              );
+              writePrivateState(process.cwd(), "sessions/" + stateSessionFile(payload.name), JSON.stringify(hybridState, null, 2));
             } catch (err: any) {
-              if (!this.isSilent)
-                console.error(
-                  chalk.yellow(
-                    `\n      > [Warning]: Could not persist: ${err.message}`,
-                  ),
-                );
+              throw new Error(`Could not securely persist session "${payload.name}": ${err.message}`);
             }
           }
         }
@@ -1246,15 +1237,9 @@ export class FlowWorker extends EventEmitter {
             : this.localBrowserSessions[payload.name];
 
           if (!loadedState) {
-            const persistPath = path.join(
-              process.cwd(),
-              ".flowstride",
-              "sessions",
-              `${payload.name}.json`,
-            );
-            if (fs.existsSync(persistPath)) {
+            const fileData = readPrivateState(process.cwd(), "sessions/" + stateSessionFile(payload.name));
+            if (fileData !== undefined) {
               try {
-                const fileData = fs.readFileSync(persistPath, "utf-8");
                 loadedState = JSON.parse(fileData);
 
                 if (payload.isGlobal) {
@@ -1719,6 +1704,7 @@ export class FlowWorker extends EventEmitter {
   }
 
   private async startStreaming() {
+    if (!screenshotEvidence(this.config)) return;
     clearInterval(this.fallbackStream);
     if (this.config.ci) return;
     if (this.config.browser && this.config.browser !== 'chromium') {

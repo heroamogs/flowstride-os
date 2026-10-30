@@ -36,6 +36,7 @@ async function workspace(options = {}) {
     '../../utils/projectPaths': requireRoot('./dist/utils/projectPaths.js'),
     '../../utils/cloud': requireRoot('./dist/utils/cloud.js'),
     '../../manual/security': requireRoot('./dist/manual/security.js'),
+    '../../manual/privateMedia': requireRoot('./dist/manual/privateMedia.js'),
     '../../security/localWorkspace': requireRoot('./dist/security/localWorkspace.js'),
     http: { ...http, createServer(handler) { server = http.createServer((req, res) => {
       if (options.uploadSize) { const emit = req.emit.bind(req); req.emit = (event, ...args) => emit(event, ...(event === 'data' ? [{ length: options.uploadSize }] : args)); }
@@ -89,7 +90,7 @@ test('manual server binds only loopback and rejects foreign, null and forged ori
       ['POST', '/api/save-design'], ['POST', '/api/save-run'], ['POST', '/api/state'],
       ['POST', '/api/upload'], ['POST', '/api/upload-defect'],
       ['DELETE', '/api/template?filename=target.json'], ['DELETE', '/api/media?filepath=/media/target.png'],
-      ['DELETE', '/api/defect-media?filepath=/defect_media/target.png'], ['GET', '/api/templates'], ['OPTIONS', '/api/save-design'],
+      ['DELETE', '/api/defect-media?filepath=/defect_media/target.png'], ['GET', '/api/templates'], ['GET', '/api/defect-preview?key=invalid'], ['OPTIONS', '/api/save-design'],
     ]) {
       const result = await app.request(route, { method, headers, body: '{}' });
       assert.equal(result.status, 403, JSON.stringify({ method, route, headers, result }));

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
+import { readPrivateCredentials, writePrivateCredentials, removePrivateCredentials, PrivateStateError } from "../security/privateState";
 import { mergeResults } from '../ci/distribution';
 import { projectPath } from '../utils/projectPaths';
-import { cloudApiBase, cloudFailure } from '../utils/cloud';
+import { cloudApiBase, cloudFailure, cloudFetch } from '../utils/cloud';
 import { loadCloudEnvironment, cloudSessionDescription, tokenExpiryDescription } from './utils/cloudSession';
 import { loadNativeConfig } from '../ci/config';
 import { initCI } from '../ci/init';
@@ -105,7 +106,7 @@ program
     const spinner = ora("Authenticating with Cloud...").start();
 
     try {
-      const response = await fetch(`${API_BASE}/api/auth/cli-sync`, {
+      const response = await cloudFetch(`${API_BASE}/api/auth/cli-sync`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -132,12 +133,9 @@ program
         ? path.join(os.homedir(), ".flowstride")
         : path.join(process.cwd(), ".flowstride");
 
-      if (!fs.existsSync(configDir)) {
-        fs.mkdirSync(configDir, { recursive: true });
-      }
 
       const credentialsPath = path.join(configDir, "credentials.json");
-      fs.writeFileSync(
+      writePrivateCredentials(
         credentialsPath,
         JSON.stringify(
           {
@@ -202,7 +200,7 @@ program
                 `✖ Reverting login: You must install the Enterprise Engine to sync this workspace.`,
               ),
             );
-            if (fs.existsSync(credentialsPath)) fs.unlinkSync(credentialsPath);
+            if (fs.existsSync(credentialsPath)) removePrivateCredentials(credentialsPath);
             process.exit(1);
           }
         }
@@ -247,18 +245,18 @@ program
         activeCredentialsPath = localCredentialsPath;
         try {
           const credentials = JSON.parse(
-            fs.readFileSync(localCredentialsPath, "utf8"),
+            readPrivateCredentials(localCredentialsPath),
           );
           token = credentials.machineToken?.trim() || null;
-        } catch (err) {}
+        } catch (err) { if (err instanceof PrivateStateError) throw err; }
       } else if (fs.existsSync(globalCredentialsPath)) {
         activeCredentialsPath = globalCredentialsPath;
         try {
           const credentials = JSON.parse(
-            fs.readFileSync(globalCredentialsPath, "utf8"),
+            readPrivateCredentials(globalCredentialsPath),
           );
           token = credentials.machineToken?.trim() || null;
-        } catch (err) {}
+        } catch (err) { if (err instanceof PrivateStateError) throw err; }
       }
     }
 
@@ -275,7 +273,7 @@ program
       !fs.existsSync(nodeModulesPath)
     ) {
       if (fs.existsSync(activeCredentialsPath))
-        fs.unlinkSync(activeCredentialsPath);
+        removePrivateCredentials(activeCredentialsPath);
       token = null;
     }
 
@@ -285,7 +283,7 @@ program
     }
 
     try {
-      const response = await fetch(`${API_BASE}/api/auth/verify-cli`, {
+      const response = await cloudFetch(`${API_BASE}/api/auth/verify-cli`, {
         method: "GET",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -298,7 +296,7 @@ program
           ),
         );
         if (response.status === 401 && !process.env.FLOWSTRIDE_TOKEN && fs.existsSync(activeCredentialsPath))
-          fs.unlinkSync(activeCredentialsPath);
+          removePrivateCredentials(activeCredentialsPath);
       } else if (response.ok) {
         const data = await response.json();
         const tier = data.tier.toUpperCase();
@@ -374,18 +372,18 @@ program
           activeCredentialsPath = localCredentialsPath;
           try {
             const credentials = JSON.parse(
-              fs.readFileSync(localCredentialsPath, "utf8"),
+              readPrivateCredentials(localCredentialsPath),
             );
             token = credentials.machineToken?.trim() || null;
-          } catch (err) {}
+          } catch (err) { if (err instanceof PrivateStateError) throw err; }
         } else if (fs.existsSync(globalCredentialsPath)) {
           activeCredentialsPath = globalCredentialsPath;
           try {
             const credentials = JSON.parse(
-              fs.readFileSync(globalCredentialsPath, "utf8"),
+              readPrivateCredentials(globalCredentialsPath),
             );
             token = credentials.machineToken?.trim() || null;
-          } catch (err) {}
+          } catch (err) { if (err instanceof PrivateStateError) throw err; }
         }
       }
 
@@ -402,7 +400,7 @@ program
         !fs.existsSync(nodeModulesPath)
       ) {
         if (fs.existsSync(activeCredentialsPath))
-          fs.unlinkSync(activeCredentialsPath);
+          removePrivateCredentials(activeCredentialsPath);
         token = null;
       }
 
@@ -411,7 +409,7 @@ program
         forceOS = true;
       } else {
         try {
-          const response = await fetch(`${API_BASE}/api/auth/verify-cli`, {
+          const response = await cloudFetch(`${API_BASE}/api/auth/verify-cli`, {
             method: "GET",
             headers: { Authorization: `Bearer ${token}` },
           });
@@ -424,13 +422,13 @@ program
               ),
             );
             if (response.status === 401 && !process.env.FLOWSTRIDE_TOKEN && fs.existsSync(activeCredentialsPath))
-              fs.unlinkSync(activeCredentialsPath);
+              removePrivateCredentials(activeCredentialsPath);
             forceOS = true;
           } else if (response.ok) {
             const data = await response.json();
             const tier = data.tier.toUpperCase();
             if (loadNativeConfig(process.cwd(), options).ci && fs.existsSync(nodeModulesPath)) {
-              const workspaceResponse = await fetch(`${API_BASE}/api/workspace/status`, {
+              const workspaceResponse = await cloudFetch(`${API_BASE}/api/workspace/status`, {
                 headers: { Authorization: `Bearer ${token}` },
               });
               if (!workspaceResponse.ok) forceOS = await handleOfflinePrompt();

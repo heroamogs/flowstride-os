@@ -14,7 +14,9 @@
     "examples/native-game",
     "NATIVE_BROWSER.md",
     "NATIVE_WORKFLOWS.md",
-    "examples/native-workflows"
+    "examples/native-workflows",
+    "LOCAL_SECURITY.md",
+    "EVIDENCE_SECURITY.md"
   ],
   "bin": {
     "flowstride": "dist/cli/index.js"
@@ -28,14 +30,15 @@
     "test:manual-security": "node --test tests/manual-security.test.cjs",
     "build:candidate": "node scripts/build-candidate.cjs",
     "verify:candidate": "node scripts/verify-candidate.cjs",
-    "test:dashboard:unit": "node --test tests/dashboard/store.test.cjs",
+    "test:dashboard:unit": "node --test tests/dashboard/store.test.cjs tests/dashboard/flow-panel.test.cjs",
     "test:dashboard": "node --test --test-concurrency=1 tests/dashboard/*.test.cjs",
-    "test:unit": "node --test tests/native/core.test.cjs tests/native/combined.test.cjs tests/native/curl.test.cjs tests/native/upload.test.cjs tests/dashboard/store.test.cjs tests/native/replay.test.cjs tests/dashboard/replay.test.cjs tests/native/assertions-sessions.test.cjs tests/native/capabilities.test.cjs tests/native/browser-selection.unit.test.cjs tests/native/manual-boundary.test.cjs tests/native/storage-hover.test.cjs tests/native/plugin-runtime.test.cjs tests/native/runtime-assertions.test.cjs tests/native/runtime-api-refresh.test.cjs tests/dashboard/report-status.test.cjs tests/dashboard/manual-title.test.cjs tests/native/assertion-results.test.cjs tests/dashboard/assertion-results.test.cjs",
-    "test:security": "node --test tests/manual-security.test.cjs tests/native/curl.test.cjs tests/native/combined.test.cjs tests/native/replay.test.cjs tests/native/assertions-sessions.test.cjs tests/native/capabilities.test.cjs tests/native/browser-selection.unit.test.cjs tests/native/manual-boundary.test.cjs tests/native/storage-hover.test.cjs tests/native/plugin-runtime.test.cjs tests/native/runtime-assertions.test.cjs tests/native/runtime-api-refresh.test.cjs tests/dashboard/report-status.test.cjs tests/dashboard/manual-title.test.cjs tests/dashboard/manual-history.browser.test.cjs tests/native/assertion-results.test.cjs tests/dashboard/assertion-results.test.cjs",
+    "test:unit": "node --test tests/native/core.test.cjs tests/native/combined.test.cjs tests/native/curl.test.cjs tests/native/upload.test.cjs tests/dashboard/store.test.cjs tests/native/replay.test.cjs tests/dashboard/replay.test.cjs tests/native/assertions-sessions.test.cjs tests/native/capabilities.test.cjs tests/native/browser-selection.unit.test.cjs tests/native/manual-boundary.test.cjs tests/native/storage-hover.test.cjs tests/native/plugin-runtime.test.cjs tests/native/runtime-assertions.test.cjs tests/native/runtime-api-refresh.test.cjs tests/dashboard/report-status.test.cjs tests/dashboard/manual-title.test.cjs tests/native/assertion-results.test.cjs tests/dashboard/assertion-results.test.cjs tests/native/private-defect.test.cjs tests/native/local-state.security.test.cjs tests/native/transport-security.test.cjs tests/native/installer-security.test.cjs tests/native/evidence-security.test.cjs tests/dashboard/flow-panel.test.cjs tests/native/replay-privacy.test.cjs",
+    "test:security": "node --test tests/manual-security.test.cjs tests/native/curl.test.cjs tests/native/combined.test.cjs tests/native/replay.test.cjs tests/native/assertions-sessions.test.cjs tests/native/capabilities.test.cjs tests/native/browser-selection.unit.test.cjs tests/native/manual-boundary.test.cjs tests/native/storage-hover.test.cjs tests/native/plugin-runtime.test.cjs tests/native/runtime-assertions.test.cjs tests/native/runtime-api-refresh.test.cjs tests/dashboard/report-status.test.cjs tests/dashboard/manual-title.test.cjs tests/dashboard/manual-history.browser.test.cjs tests/native/assertion-results.test.cjs tests/dashboard/assertion-results.test.cjs tests/native/private-defect.test.cjs tests/native/local-state.security.test.cjs tests/native/transport-security.test.cjs tests/native/installer-security.test.cjs tests/native/evidence-security.test.cjs tests/native/replay-privacy.test.cjs",
     "test:replay": "node --test tests/native/replay.test.cjs tests/dashboard/replay.test.cjs tests/dashboard/curl.browser.test.cjs",
     "test:assertions-sessions": "node --test --test-concurrency=1 tests/native/assertions-sessions*.test.cjs",
     "test:capabilities": "node --test --test-concurrency=1 tests/native/capabilities*.test.cjs",
-    "test:examples": "node --test --test-concurrency=1 tests/native/workflow-examples.test.cjs"
+    "test:examples": "node --test --test-concurrency=1 tests/native/workflow-examples.test.cjs",
+    "test:private-security": "node --test --test-concurrency=1 tests/native/local-state.security.test.cjs tests/native/transport-security.test.cjs tests/native/installer-security.test.cjs tests/native/evidence-security.test.cjs tests/native/replay-privacy.test.cjs"
   },
   "keywords": [
     "automation",

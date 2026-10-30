@@ -1,0 +1,38 @@
+.flow-panel-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -9px;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  z-index: 50;
+}
+
+.flow-panel-divider::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #30363d;
+}
+
+.flow-panel-divider:hover,
+.flow-panel-divider:focus-visible,
+.flow-panel-divider[data-dragging] {
+  background: rgba(124, 58, 237, 0.2);
+}
+
+.flow-panel-divider:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: -2px;
+}
+
+.flow-panel-divider:hover::after,
+.flow-panel-divider:focus-visible::after,
+.flow-panel-divider[data-dragging]::after {
+  background: #a78bfa;
+}

@@ -1,3 +1,5 @@
+import { maskedCurl, replayTemplateFromLog, sanitizeReplayRequest } from "../../../security/manualReplay";
+import { buildReplayRequest, ReplayRequestError } from "../../../utils/replayRequest";
 import { useState, useEffect, useRef } from "react";
 import { Search, Play, Film, Copy, Check } from "lucide-react";
 import { useFlowStore, type LogType, type LogEvent } from "../store";
@@ -252,20 +254,27 @@ export const LogsView = () => {
 
   const handleSendReplay = () => {
     if (!activeReplay) return;
-    updateReplay("isLoading", true);
-    updateReplay("response", null);
-    updateReplay("status", null);
-    updateReplay('error', null);
     const requestId = crypto.randomUUID();
     updateReplay('requestId', requestId);
-
-    sendToRunner("REPLAY_REQ", {
-      requestId,
-      method: activeReplay.method,
-      url: activeReplay.url,
-      headers: activeReplay.headers,
-      body: activeReplay.body,
-    });
+    updateReplay('response', null);
+    updateReplay('status', null);
+    updateReplay('error', null);
+    try {
+      // The same guard runs again in the worker before any network request.
+      buildReplayRequest(activeReplay);
+    } catch (error) {
+      const code = error instanceof ReplayRequestError ? error.code : 'REPLAY_INVALID_REQUEST';
+      useFlowStore.getState().setReplayResponse({ error: error instanceof Error ? error.message : 'Replay request is invalid.' }, null, code, requestId);
+      return;
+    }
+    const payload = { requestId, method: activeReplay.method, url: activeReplay.url, headers: activeReplay.headers, body: activeReplay.body };
+    const masked = sanitizeReplayRequest(payload);
+    // Entered credentials are one-shot input, not saved request history.
+    updateReplay('url', masked.url);
+    updateReplay('headers', JSON.stringify(masked.headers, null, 2));
+    updateReplay('body', masked.body ?? '');
+    updateReplay('isLoading', true);
+    sendToRunner('REPLAY_REQ', payload);
   };
 
   const copyToClipboard = async (text: string) => {
@@ -281,6 +290,7 @@ export const LogsView = () => {
   const renderTabContent = () => {
     if (!selectedLog) return null;
     const details = selectedLog.details || {};
+    const curlToCopy = maskedCurl(replayTemplateFromLog(details));
 
     switch (activeTab) {
       case "Overview":
@@ -402,9 +412,9 @@ export const LogsView = () => {
         return (
           <div style={{ position: "relative" }}>
             <button
-              onClick={() => copyToClipboard(details.rawCurlString || details.curlString)}
-              disabled={!details.rawCurlString && details.curlString === '[REDACTED]'}
-              title={!details.rawCurlString && details.curlString === '[REDACTED]' ? 'This command was redacted. Rerun the flow locally to capture a new command.' : 'Copy the original local request, including its headers and body.'}
+              onClick={() => copyToClipboard(curlToCopy)}
+              disabled={!curlToCopy}
+              title={curlToCopy ? 'Copies cURL with sensitive values redacted. Replace placeholders before executing.' : 'Rerun the flow locally to capture a request.'}
               style={{
                 position: "absolute",
                 top: "10px",
@@ -436,7 +446,7 @@ export const LogsView = () => {
                 </>
               ) : (
                 <>
-                  <Copy size={12} /> Copy raw cURL
+                  <Copy size={12} /> Copy masked cURL
                 </>
               )}
             </button>

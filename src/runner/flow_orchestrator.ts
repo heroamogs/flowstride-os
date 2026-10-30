@@ -106,6 +106,9 @@ export class FlowOrchestrator {
           if (serveDOMSnapshot(req, res, this.config)) return;
 
         if (req.url && req.url.startsWith("/videos/")) {
+          res.setHeader("Cache-Control", "private, no-store");
+          res.setHeader("X-Content-Type-Options", "nosniff");
+          res.setHeader("Referrer-Policy", "no-referrer");
           let urlObj;
           try {
             urlObj = new URL(req.url, `http://${req.headers.host}`);
@@ -132,6 +135,8 @@ export class FlowOrchestrator {
           );
 
           if (fs.existsSync(videoPath)) {
+              const info = fs.lstatSync(videoPath);
+              if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) { res.writeHead(404); res.end('Video unavailable'); return; }
             const stat = fs.statSync(videoPath);
             const fileSize = stat.size;
 

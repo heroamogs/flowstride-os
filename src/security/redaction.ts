@@ -1,13 +1,6 @@
-const sensitive = /password|passcode|secret|token|authorization|cookie|api.?key|master.?key|otp|email|curlString|rawReplayRequest|strippedDom/i;
-export function redactText(input: string, secrets: string[] = []): string {
-  let value = String(input);
-  for (const secret of secrets.filter(s => typeof s === 'string' && s.length >= 4).sort((a,b) => b.length - a.length)) value = value.split(secret).join('[REDACTED]');
-  value = value.replace(/\bBearer\s+[^\s"'<>]+/gi, 'Bearer [REDACTED]')
-    .replace(/\beyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b/g, '[REDACTED]')
-    .replace(/(["']?(?:password|passcode|secret|token|otp|authorization|cookie|api[_-]?key|master[_-]?key)["']?\s*[:=]\s*)(["']?)[^\s,;"'<>}]+\2/gi, '$1[REDACTED]')
-    .replace(/([?&](?:ticket|token|signature|x-amz-[^=&#]+)=)[^&#\s]+/gi, '$1[REDACTED]');
-  return value;
-}
+import { isSensitiveField, redactText } from "./sensitiveFields";
+import { replaySecretValues, sanitizeReplayRequest } from "./manualReplay";
+export { redactText } from "./sensitiveFields";
 export function redactPayload(value: any, secrets: string[] = [], depth = 0): any {
   if (depth > 12) return '[omitted]';
   if (typeof value === 'string') {
@@ -19,17 +12,15 @@ export function redactPayload(value: any, secrets: string[] = [], depth = 0): an
   if (Array.isArray(value)) return value.map(item => redactPayload(item, secrets, depth + 1));
   if (!value || typeof value !== 'object') return value;
   if ((globalThis as any).Buffer?.isBuffer(value)) return '[binary]';
-  return Object.fromEntries(Object.entries(value).map(([key,item]) => [key, sensitive.test(key) ? '[REDACTED]' : redactPayload(item, secrets, depth + 1)]));
+  return Object.fromEntries(Object.entries(value).map(([key,item]) => [key, isSensitiveField(key) ? '[REDACTED]' : redactPayload(item, secrets, depth + 1)]));
 }
 
-/** Raw network commands belong only to the local interactive debugger. */
+/** Manual captures carry masked templates; original credentials never cross this boundary. */
 export function redactWorkerPayload(type: string, payload: any, secrets: string[], localDebug = false): any {
-  const result = redactPayload(payload, secrets);
-  if (!localDebug || !payload || !result) return result;
-  if (type === 'LOG_EVENT' && ['REST', 'GRAPHQL'].includes(payload.type) && typeof payload.details?.curlString === 'string') {
-    result.details.rawCurlString = payload.details.curlString;
-    if (payload.details.rawReplayRequest) result.details.rawReplayRequest = payload.details.rawReplayRequest;
-
-  }
+  const request = type === 'LOG_EVENT' && ['REST', 'GRAPHQL'].includes(payload?.type)
+    ? payload.details?.replayRequest || payload.details?.rawReplayRequest : undefined;
+  const known = request && typeof request === 'object' ? [...secrets, ...replaySecretValues(request)] : secrets;
+  const result = redactPayload(payload, known);
+  if (localDebug && request && typeof request === 'object' && result?.details) result.details.replayRequest = sanitizeReplayRequest(request, known);
   return result;
 }
