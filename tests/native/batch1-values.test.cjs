@@ -25,6 +25,21 @@ test('property assertions reject browser-global paths before resolving a target'
  }, 1), /Browser property paths cannot access browser globals/);
 });
 
+test('a retry that runs out of time preserves the last property read error', async () => {
+ let reads = 0;
+ const locator = {
+  count: async () => 1,
+  evaluate: async () => {
+   if (++reads === 1) throw new Error('Browser property paths cannot execute custom getters.');
+   return new Promise(() => {});
+  },
+ };
+ await assert.rejects(assertBrowser({ locator: () => locator }, {
+  selector: '#customer-email', condition: 'property', property: 'unsafe', value: 'protected',
+ }, 700), /cannot execute custom getters/);
+ assert.equal(reads, 2);
+});
+
 test('network paths preserve typed false, zero, null, arrays/objects and header names as detached snapshots',()=>{
  const data={body:{flag:false,total:0,empty:null,items:[{id:12}],object:{enabled:true}},headers:{'content-type':'application/json'}};
  for(const [path,value] of [['body.flag',false],['body.total',0],['body.empty',null],['body.items[0].id',12],['headers.content-type','application/json']])assert.deepEqual(readDataPath(data,path),value);

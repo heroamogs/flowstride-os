@@ -14,15 +14,17 @@ const html = `<!doctype html><html><body>
 <div id="horizontal" role="group" aria-label="Position controls"><button>Choose</button><span>Middle anchor</span><button>Choose</button></div>
 </body></html>`;
 
-for (const engine of ['chromium', 'firefox', 'webkit']) test(`${engine} textual/spatial object assertions preserve uniqueness, property types, hidden state and legacy targets`, { timeout: 30000 }, async () => {
+for (const engine of ['chromium', 'firefox', 'webkit']) test(`${engine} textual/spatial object assertions preserve uniqueness, property types, hidden state and legacy targets`, { timeout: 45000 }, async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flowstride-readable-assertions-'));
-  const web = new WebAdapter({ browser: engine, projectRoot: root, headless: true, ci: true, recordVideo: false, timeout: 500 });
+  const lookupTimeout = 5000;
+  const mismatchTimeout = 2000;
+  const web = new WebAdapter({ browser: engine, projectRoot: root, headless: true, ci: true, recordVideo: false, timeout: lookupTimeout });
   let page;
   try {
     await web.initialise(); page = web.getPage(); await page.setContent(html);
     const check = async data => {
       const results = [];
-      await assertBrowser(page, { timeout: 400, ...data }, 500, result => results.push(result), web);
+      await assertBrowser(page, data, lookupTimeout, result => results.push(result), web);
       assert.equal(results.at(-1).status, 'passed');
       return results.at(-1);
     };
@@ -45,12 +47,12 @@ for (const engine of ['chromium', 'firefox', 'webkit']) test(`${engine} textual/
     await check({ selector: '#customer-email', condition: 'property', property: 'value', value: 'samuel.me' });
 
     let failure;
-    await assert.rejects(assertBrowser(page, { target: { text: 'Email', element: 'input' }, condition: 'value', value: 'samuel.me', timeout: 90 }, 100, result => failure = result, web), AssertionFailure);
+    await assert.rejects(assertBrowser(page, { target: { text: 'Email', element: 'input' }, condition: 'value', value: 'samuel.me', timeout: mismatchTimeout }, lookupTimeout, result => failure = result, web), AssertionFailure);
     assert.equal(failure.checks.find(item => item.key === 'unique').status, 'failed');
     assert.match(assertionText(failure), /Actual: 2/);
 
     await page.locator('#save').evaluate(element => element.disabled = true);
-    await assert.rejects(assertBrowser(page, { target: 'Save settings', condition: 'enabled', timeout: 90, message: 'Saving requires an approved account' }, 100, result => failure = result, web), AssertionFailure);
+    await assert.rejects(assertBrowser(page, { target: 'Save settings', condition: 'enabled', timeout: mismatchTimeout, message: 'Saving requires an approved account' }, lookupTimeout, result => failure = result, web), AssertionFailure);
     assert.equal(failure.message, 'Saving requires an approved account');
     assert.match(assertionText(failure), /Expected: enabled/);
     assert.match(assertionText(failure), /Actual: disabled/);
@@ -71,7 +73,7 @@ for (const engine of ['chromium', 'firefox', 'webkit']) test(`${engine} textual/
 
     // A user-defined getter is never executed while reading a property.
     await page.locator('#customer-email').evaluate(element => { window.getterExecuted = false; Object.defineProperty(element, 'unsafe', { get() { window.getterExecuted = true; return 'should not run'; } }); });
-    await assert.rejects(assertBrowser(page, { selector: '#customer-email', condition: 'property', property: 'unsafe', value: 'should not run', timeout: 90 }, 100, undefined, web));
+    await assert.rejects(assertBrowser(page, { selector: '#customer-email', condition: 'property', property: 'unsafe', value: 'should not run', timeout: mismatchTimeout }, lookupTimeout, undefined, web), /custom getters/);
     assert.equal(await page.evaluate(() => window.getterExecuted), false);
     for (const property of ['constructor.name', '__proto__.value', 'ownerDocument.cookie', 'validity.constructor', 'value;alert(1)']) {
       await assert.rejects(assertBrowser(page, { selector: '#customer-email', condition: 'property', property, value: true, timeout: 90 }, 100, undefined, web), /Unsafe|path/i);

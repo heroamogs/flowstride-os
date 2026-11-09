@@ -54,7 +54,6 @@ export async function assertBrowser(page: Page, input: unknown, defaultTimeout: 
     await poll(async () => {
       let count: number | undefined, roleCount: number | undefined, actual: unknown, matched = false, evaluated = false;
       let sensitive = /password|passcode|token|secret|authorization|cookie|api.?key|otp/i.test([data.key,data.property,data.attribute].filter(Boolean).join(' '));
-      lastReadError = undefined;
       try {
         if (elementCondition) {
           if (data.target !== undefined) locator = await web!.resolveAssertionTarget(data.target, data.frame);
@@ -97,6 +96,8 @@ export async function assertBrowser(page: Page, input: unknown, defaultTimeout: 
           }
           if (data.not) matched=!matched;
         }
+        // Keep the last completed read's error if another read runs out of time.
+        lastReadError = undefined;
       } catch (error) { lastReadError=diagnosticValue(error instanceof Error?error.message:String(error));evaluated=false;matched=false; }
       const checks: AssertionCheck[]=[];
       if (elementCondition) {
