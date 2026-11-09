@@ -1,6 +1,6 @@
 import type { WebAdapter } from '../adapters/web/playwright';
 import { readableTargetSchema, readableTargetDescription } from './targeting';
-import { parseDataPath, readBrowserProperty } from './paths';
+import { parseBrowserPropertyPath, readBrowserProperty } from './paths';
 import path from 'node:path';
 import { z } from 'zod';
 import type { Page } from 'playwright';
@@ -29,6 +29,7 @@ export async function assertBrowser(page: Page, input: unknown, defaultTimeout: 
   const data = schema.parse(input), timeout = data.timeout ?? defaultTimeout, started = Date.now();
   const expected: any = data.matches !== undefined ? new RegExp(data.matches, data.flags) : data.value;
   const equals = (actual: unknown) => expected instanceof RegExp ? typeof actual === 'string' && expected.test(actual) : isDeepStrictEqual(actual, expected);
+  if (data.condition === 'property' && data.property) parseBrowserPropertyPath(data.property);
   const activeScope = web?.getScope?.() || page;
   const scope = data.frame ? activeScope.frameLocator(data.frame) : activeScope;
   const elementCondition = !['url','title','localStorage','sessionStorage'].includes(data.condition);
@@ -36,7 +37,6 @@ export async function assertBrowser(page: Page, input: unknown, defaultTimeout: 
   if (data.target !== undefined && data.name !== undefined) throw new Error('name belongs to role targeting; use text inside target instead.');
   if (!elementCondition && data.target !== undefined) throw new Error('Page/storage assertions do not take an element target.');
   if (data.target !== undefined && !web) throw new Error('Textual assertions require a Flowstride browser adapter.');
-  if (data.condition === 'property' && data.property) parseDataPath(data.property);
   let locator = data.role ? scope.getByRole(data.role as any, { name: data.name, exact: true }) : scope.locator(data.selector || 'body');
   const booleanConditions = ['visible','hidden','attached','enabled','disabled','editable','checked','empty','focused','inViewport'];
   if (!booleanConditions.includes(data.condition) && data.condition !== 'attribute' && expected === undefined) throw new Error('This assertion requires value or matches.');

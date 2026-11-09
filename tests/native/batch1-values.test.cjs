@@ -1,6 +1,7 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {parseDataPath,readDataPath,dataSnapshot}=require('../../dist/native/paths');
+const {assertBrowser}=require('../../dist/native/assertions');
 const {NativeEvents}=require('../../dist/native/events');
 const {FlowWorker}=require('../../dist/runner/flow_worker');
 const {Parser}=require('../../dist/parser/parser');
@@ -16,6 +17,13 @@ for(const command of [
 });
 
 for(const path of ['__proto__.x','constructor.name','body.prototype','body.toString()','body["password"]','a..b','a;alert(1)','a.'+'b.'.repeat(33)+'c'])test(`unsafe paths fail closed: ${path}`,()=>assert.throws(()=>parseDataPath(path)));
+
+test('property assertions reject browser-global paths before resolving a target', async () => {
+ const browser = { locator: () => assert.fail('An invalid path must not look up a browser target') };
+ await assert.rejects(assertBrowser(browser, {
+  selector: '#customer-email', condition: 'property', property: 'ownerDocument.cookie', value: true,
+ }, 1), /Browser property paths cannot access browser globals/);
+});
 
 test('network paths preserve typed false, zero, null, arrays/objects and header names as detached snapshots',()=>{
  const data={body:{flag:false,total:0,empty:null,items:[{id:12}],object:{enabled:true}},headers:{'content-type':'application/json'}};

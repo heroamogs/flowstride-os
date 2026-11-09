@@ -1,6 +1,7 @@
 import type { Locator } from 'playwright';
 
 const forbidden = new Set(['__proto__', 'prototype', 'constructor']);
+const browserGlobals = new Set(['window','document','ownerDocument','defaultView','parentWindow','contentWindow','contentDocument','frames','location','navigator','localStorage','sessionStorage']);
 
 /** Read data, never expressions, functions, prototype chains or browser globals. */
 export function parseDataPath(path: unknown): string[] {
@@ -48,10 +49,14 @@ export function readDataPath(value: unknown, path: string): unknown {
   return dataSnapshot(current);
 }
 
-export async function readBrowserProperty(locator: Locator, path: string): Promise<unknown> {
+export function parseBrowserPropertyPath(path: string): string[] {
   const parts = parseDataPath(path);
-  const browserGlobals = new Set(['window','document','ownerDocument','defaultView','parentWindow','contentWindow','contentDocument','frames','location','navigator','localStorage','sessionStorage']);
   if (parts.some(part => browserGlobals.has(part))) throw new Error('Browser property paths cannot access browser globals.');
+  return parts;
+}
+
+export async function readBrowserProperty(locator: Locator, path: string): Promise<unknown> {
+  const parts = parseBrowserPropertyPath(path);
   const count = await locator.count();
   if (count !== 1) throw new Error(`Property extraction requires exactly one target; found ${count}. Narrow the readable target with a qualifier, spatial relationship, or explicit selector.`);
   const value = await locator.evaluate((element, parts) => {
