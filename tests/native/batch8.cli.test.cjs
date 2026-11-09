@@ -7,7 +7,7 @@ const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { setTimeout: sleep } = require('node:timers/promises');
 const { WebSocketServer } = require('ws');
-const { root, cloud, privateEngine, execute } = require('./batch5.fixtures.cjs');
+const { root, cloud, privateEngine, execute, parallelWorkerEnv } = require('./batch5.fixtures.cjs');
 
 const page = `<!doctype html><meta charset="utf-8"><title>Application events</title>
 <style>
@@ -305,7 +305,7 @@ test('Batch 8 parallel Cloud files observe separate tabs and can arm SSE on an a
     .replace('flow.open "/?initial=1";', 'flow.click button "Open connections";');
   f.write('flows/first.flow', afterNavigation);
   f.write('flows/second.flow', afterNavigation);
-  const result = await execute(f, ['--workers', '2']);
+  const result = await execute(f, ['--workers', '2'], parallelWorkerEnv(f));
   assert.equal(result.code, 0, result.output);
   assert.match(result.output, /Distributing 2 files to 2 workers/);
   assert.equal(f.requests.filter(url => url === '/updates/stream').length, 2);

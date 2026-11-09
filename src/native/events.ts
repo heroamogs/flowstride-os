@@ -43,7 +43,13 @@ const routeSchema = z.object({ name, url: urlPattern, method: z.string().optiona
 const armSchema = z.object({ name, url: urlPattern, method: z.string().optional(), kind: z.enum(['request','response']).default('response'), timeout: positive.optional(), status: z.number().int().optional() }).strict();
 const networkExpect = z.object({ name, status: z.number().int().optional(), method: z.string().optional(), header: z.string().optional(), equals: z.unknown().optional(), path: z.string().optional(), contains: z.string().optional() }).strict();
 export class NativeEvents {
-  private routes = new Map<string, { context: BrowserContext; handler: (route: Route) => Promise<void>; pattern: string; cancellation: AbortController }>();
+  private routes = new Map<string, {
+    context: BrowserContext;
+    handler: (route: Route) => Promise<void>;
+    pattern: string;
+    cancellation: AbortController;
+    exhausted: () => boolean;
+  }>();
   private events = new Map<string, ArmedEvent<any>>();
   private captured = new Map<string, any>();
   private routeErrors: string[] = [];
@@ -65,7 +71,8 @@ export class NativeEvents {
     if (this.routeErrors.length) throw new Error(`Network route failed: ${this.routeErrors.shift()}`);
     if (action === 'route') {
       const data = routeSchema.parse(input), key = this.key(data.name), context = this.web.getContext();
-      if (this.routes.has(key)) throw new Error('Route name already exists; remove it before replacing it.');
+      const previous = this.routes.get(key);
+      if (previous && !previous.exhausted()) throw new Error('Route name already exists; remove it before replacing it.');
       const responseFields = ['status','headers','json','body','fixture','contentType'];
       if (['abort','continue'].includes(data.mode) && responseFields.some(key => key in data) || data.mode !== 'continue' && data.request !== undefined) throw new Error('Route options do not apply to the selected mode.');
       if (data.mode === 'abort' && data.request) throw new Error('Abort routes cannot modify requests.');
@@ -87,8 +94,11 @@ export class NativeEvents {
         } catch { return false; }
       };
       const operation = async (route: Route) => {
+        // Keep interception attached after the last match. Disabling it while a
+        // follow-up request starts can leave that request paused in Chromium.
+        if (remaining <= 0) return route.fallback();
         if (cancellation.signal.aborted) return route.abort();
-        if (remaining <= 0 || data.method && route.request().method().toUpperCase() !== data.method.toUpperCase() || !matchesBody(route)) return route.fallback();
+        if (data.method && route.request().method().toUpperCase() !== data.method.toUpperCase() || !matchesBody(route)) return route.fallback();
         remaining--;
         if (data.delay) await sleep(data.delay, undefined, { signal: cancellation.signal });
         if (cancellation.signal.aborted) return route.abort();
@@ -111,15 +121,20 @@ export class NativeEvents {
           await route.abort().catch(() => {});
         } finally {
           active--;
-          if (!active && remaining === 0 && this.routes.get(key)?.handler === handler) {
-            this.routes.delete(key);
-            await context.unroute(data.url, handler).catch(() => {});
-          }
         }
       };
-      this.routes.set(key, { context, pattern: data.url, handler, cancellation });
-      try { await context.route(data.url, handler); }
-      catch (error) { this.routes.delete(key); throw error; }
+      const registered = { context, pattern: data.url, handler, cancellation, exhausted: () => remaining === 0 && active === 0 };
+      this.routes.set(key, registered);
+      try {
+        await context.route(data.url, handler);
+      } catch (error) {
+        if (this.routes.get(key) === registered) {
+          if (previous) this.routes.set(key, previous);
+          else this.routes.delete(key);
+        }
+        throw error;
+      }
+      if (previous) await previous.context.unroute(previous.pattern, previous.handler).catch(() => {});
       return;
     }
     if (action === 'unroute') {

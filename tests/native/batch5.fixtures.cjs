@@ -38,4 +38,12 @@ Then "Check the saved customer"
   flow.assert.that {"target":{"text":"Customer name","element":"input"},"condition":"value","value":"@case.name"};
   flow.expect visible "Saved @case.name";
 `;}
-module.exports={root,cloud,privateEngine,fixture,execute,prepare,source};
+function parallelWorkerEnv(f) {
+ const preload = path.join(f.dir, 'parallel-workers.cjs');
+ // Give the CLI's CPU check a predictable budget while it starts two real workers.
+ fs.writeFileSync(preload, `const os = require('node:os');
+const cpus = os.cpus();
+os.cpus = () => Array.from({ length: 3 }, (_, index) => cpus[index % cpus.length]);`);
+ return { NODE_OPTIONS: `--require=${JSON.stringify(preload)}` };
+}
+module.exports={root,cloud,privateEngine,fixture,execute,prepare,source,parallelWorkerEnv};

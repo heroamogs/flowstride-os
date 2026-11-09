@@ -6,19 +6,28 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { setTimeout: sleep } = require('node:timers/promises');
-const { root, cloud, privateEngine, execute } = require('./batch5.fixtures.cjs');
+const { root, cloud, privateEngine, execute, parallelWorkerEnv } = require('./batch5.fixtures.cjs');
 
 const html = `<!doctype html><title>Jobs</title><h1>Jobs</h1>
-<button id="run">Run browser jobs</button><output id="state">Not started</output>
+<button id="run">Run browser jobs</button><output id="state" aria-label="Browser job sources">Not started</output>
 <script>
 document.querySelector('#run').onclick = async () => {
+  const state = document.querySelector('#state');
   const results = [];
+  state.textContent = 'Browser jobs started';
   for (const operationName of ['Health', 'GetOrders', 'GetOrders']) {
-    const started = performance.now();
-    const response = await fetch('/job', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operationName }) });
-    results.push((await response.json()).source + (performance.now() - started >= 100 && results.length === 1 ? ' delayed' : ''));
+    try {
+      const started = performance.now();
+      const response = await fetch('/job', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operationName }) });
+      const { source } = await response.json();
+      const delayed = results.length === 1 && performance.now() - started >= 100;
+      results.push(source + (delayed ? ' delayed' : ''));
+      state.textContent = results.join(' / ');
+    } catch (error) {
+      state.textContent = [...results, operationName + ' failed: ' + error.message].join(' / ');
+      return;
+    }
   }
-  document.querySelector('#state').textContent = results.join(' / ');
 };
 </script>`;
 
@@ -115,7 +124,7 @@ flow.open "/";
 flow.network.route {"name":"orders","url":"**/job","method":"POST","requestBody":{"path":"operationName","equals":"GetOrders"},"mode":"fulfill","json":{"source":"fixture"},"times":1,"delay":180};
 flow.click button "Run browser jobs";
 Then "Check the route and the original API context"
-flow.expect visible "origin / fixture delayed / origin";
+flow.assert.that {"role":"status","name":"Browser job sources","condition":"text","value":"origin / fixture delayed / origin","timeout":7000};
 flow.assert.value {"actual":"@actor","operator":"equals","expected":"actor=administrator"};
 `;
 
@@ -220,7 +229,7 @@ flow.api.request {"method":"POST","url":"/login"};
 `;
   f.write('flows/first.flow', source('one'));
   f.write('flows/second.flow', source('two'));
-  const result = await execute(f, ['--workers', '2']);
+  const result = await execute(f, ['--workers', '2'], parallelWorkerEnv(f));
   assert.equal(result.code, 0, result.output);
   assert.match(result.output, /Distributing 2 files to 2 workers/);
   assert.equal(f.summary().status, 'passed');

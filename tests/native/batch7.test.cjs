@@ -305,9 +305,10 @@ test('handoff detects delayed routes and nested Batch 7 fragments, while legacy 
 test('delayed network routes count only matching bodies and abort promptly on removal', async () => {
   const { NativeEvents } = require(path.join(root, 'dist/native/events'));
   const handlers = new Map();
+  const changes = [];
   const context = {
-    route: async (pattern, handler) => { handlers.set(pattern, handler); },
-    unroute: async (pattern, handler) => { if (handlers.get(pattern) === handler) handlers.delete(pattern); },
+    route: async (pattern, handler) => { changes.push('attach'); handlers.set(pattern, handler); },
+    unroute: async (pattern, handler) => { changes.push('detach'); if (handlers.get(pattern) === handler) handlers.delete(pattern); },
   };
   const web = { activeProfile: 'default', getContext: () => context, pageErrors: [] };
   const events = new NativeEvents(web, { timeout: 1000 });
@@ -333,8 +334,17 @@ test('delayed network routes count only matching bodies and abort promptly on re
   await handler({ ...body('{"job":{"priority":true}}'), fulfill: async () => { fulfilled = true; } });
   assert(fulfilled);
   assert(performance.now() - started >= 70);
-  assert.equal(handlers.size, 0);
+  let fellThrough = false;
+  await handler({
+    ...body('{"job":{"priority":true}}'),
+    fallback: async () => { fellThrough = true; },
+    fulfill: async () => assert.fail('An exhausted route must only pass requests through'),
+  });
+  assert(fellThrough);
+  assert.deepEqual(changes, ['attach']);
   await events.network('route', { ...match, delay: 20000, times: 1 });
+  assert.notEqual(handlers.get(url), handler);
+  assert.deepEqual(changes, ['attach', 'attach', 'detach']);
   let aborted = false;
   const pending = handlers.get(url)({
     ...body('{"job":{"priority":true}}'),
@@ -346,5 +356,8 @@ test('delayed network routes count only matching bodies and abort promptly on re
   assert(aborted);
   assert.equal(handlers.size, 0);
   assert.deepEqual(web.pageErrors, []);
+  await events.network('route', { ...match, times: 1 });
+  await handlers.get(url)(body('{"job":{"priority":true}}'));
   await events.dispose();
+  assert.equal(handlers.size, 0);
 });
