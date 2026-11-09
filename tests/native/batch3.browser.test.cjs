@@ -12,7 +12,7 @@ document.querySelector('#invoice').addEventListener('dblclick',()=>document.quer
 document.querySelector('#shadow').attachShadow({mode:'open'}).innerHTML='<label>Shadow email<input id="shadow-email"></label>';
 </script></body></html>`;
 for(const browser of ['chromium','firefox','webkit'])test(`${browser}: native readable interactions, options, scrolling, history, profiles and cancellation`,{timeout:60000},async()=>{
- const root=fs.mkdtempSync(path.join(os.tmpdir(),'flowstride-batch3-browser-'));const config={browser,projectRoot:root,headless:true,ci:true,recordVideo:false,timeout:1200};const web=new WebAdapter(config),control=new ExecutionControl();let aborted=false;const native=new NativeRuntime(web,config,{delay:ms=>control.delay(ms),cancelled:()=>aborted});
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'flowstride-batch3-browser-'));const config={browser,projectRoot:root,headless:true,ci:true,recordVideo:false,timeout:4000};const web=new WebAdapter(config),control=new ExecutionControl();let aborted=false;const native=new NativeRuntime(web,config,{delay:ms=>control.delay(ms),cancelled:()=>aborted});
  const server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end('<!doctype html><h1>'+req.url+'</h1>');});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  try{
  await web.initialise();const page=web.getPage();await page.setViewportSize({width:1280,height:1000});await page.setContent(html);

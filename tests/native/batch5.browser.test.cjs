@@ -20,7 +20,7 @@ for(const browser of ['chromium','firefox','webkit'])test(`${browser}: textual/s
  await native.execute('frame.use',{target:'Attachment frame'});await native.execute('files.select',{target:{text:'Attach documents',element:'input'},files});assert.equal((await selected(page.frameLocator('iframe').locator('#frame-files'))).length,2);assert.equal((await selected(page.locator('#multiple'))).length,0);await native.execute('frame.main',{});
  await native.execute('files.select',{target:{text:'Frame chooser',element:'button'},files});assert.equal((await selected(page.frameLocator('iframe').locator('#frame-chooser'))).length,2);
  await assert.rejects(native.execute('files.select',{target:{text:'Choose documents',element:'button'},files:[]}),/Clearing.*direct/);
- await assert.rejects(native.execute('files.select',{target:{text:'No chooser',element:'button'},files,timeout:100}),/timed out/);assert.equal(page.listenerCount('filechooser'),0);
+ await assert.rejects(native.execute('files.select',{target:{text:'No chooser',element:'button'},files,timeout:1200}),/timed out/);assert.equal(page.listenerCount('filechooser'),0);
  assert.equal(fs.readFileSync(path.join(f.dir,'fixtures/one.txt'),'utf8'),'first file');
  }finally{await f.close();}
 });

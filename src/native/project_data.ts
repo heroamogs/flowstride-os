@@ -23,21 +23,40 @@ export function readBoundedProjectFile(config: Pick<FlowstrideConfig,'projectRoo
       const parts=path.relative(fs.realpathSync(root),candidate).split(path.sep);
       if(parts.some(part=>['.git','.flowstride','.ssh','.aws','.npmrc','.netrc'].includes(part)||/^\.env(?:\.|$)/.test(part)))throw new Error('Private runtime state and credential/configuration files are not fixture data.');
     }
-    const before = fs.lstatSync(absolute);
-    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) throw new Error('Expected one regular project file, not a directory, device, symbolic link or hard link.');
-    fd = fs.openSync(absolute,fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0));
-    const stat = fs.fstatSync(fd);
-    if (!stat.isFile() || stat.dev !== before.dev || stat.ino !== before.ino) throw new Error('The project file changed while opening it.');
-    // Recheck containment after opening, including a replaced parent directory.
-    projectPath(root,file);
-    if (stat.size > maximum) throw new Error(`File exceeds the ${maximum}-byte limit.`);
-    const bytes = Buffer.alloc(stat.size + 1); let count = 0;
-    while (count < bytes.length) { const n = fs.readSync(fd,bytes,count,bytes.length-count,null); if (!n) break; count += n; }
-    const after=fs.fstatSync(fd);
-    if (count > stat.size || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs || after.ctimeMs !== stat.ctimeMs || after.nlink !== 1) throw new Error('The project file grew or changed while reading it.');
-    if (count !== stat.size) throw new Error('The project file changed while reading it.');
-    projectPath(root,file);
-    return bytes.subarray(0,count);
+    const before = fs.lstatSync(absolute, { bigint: true });
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n) throw new Error('Expected one regular project file, not a directory, device, symbolic link or hard link.');
+    const changed = () => new Error('The project file changed while opening it.');
+    const assertPathIdentity = () => {
+      projectPath(root, file);
+      const current = fs.lstatSync(absolute, { bigint: true });
+      if (!current.isFile() || current.nlink !== 1n || current.dev !== before.dev || current.ino !== before.ino) throw changed();
+    };
+    const flags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0);
+    fd = fs.openSync(absolute, flags);
+    const stat = fs.fstatSync(fd, { bigint: true });
+    if (!stat.isFile() || stat.nlink !== 1n || stat.ino !== before.ino) throw changed();
+    assertPathIdentity();
+    if (stat.dev !== before.dev) {
+      if (process.platform !== 'win32') throw changed();
+      // Windows can report different volume IDs for path and descriptor stats.
+      // Verify the original against a second descriptor opened at the checked path.
+      const reference = fs.openSync(absolute, flags);
+      try {
+        const verified = fs.fstatSync(reference, { bigint: true });
+        if (!verified.isFile() || verified.nlink !== 1n || verified.dev !== stat.dev || verified.ino !== stat.ino) throw changed();
+      } finally { fs.closeSync(reference); }
+      assertPathIdentity();
+    }
+    if (stat.size > BigInt(maximum)) throw new Error(`File exceeds the ${maximum}-byte limit.`);
+    const size = Number(stat.size), bytes = Buffer.alloc(size + 1);
+    let count = 0;
+    while (count < bytes.length) { const n = fs.readSync(fd, bytes, count, bytes.length - count, null); if (!n) break; count += n; }
+    const after = fs.fstatSync(fd, { bigint: true });
+    if (count !== size || after.size !== stat.size || after.mtimeNs !== stat.mtimeNs || after.ctimeNs !== stat.ctimeNs || after.nlink !== 1n) {
+      throw new Error('The project file grew or changed while reading it.');
+    }
+    assertPathIdentity();
+    return bytes.subarray(0, count);
   } catch (error) { throw new Error(`Cannot read project file ${JSON.stringify(file)}: ${error instanceof Error ? error.message : String(error)}`); }
   finally { if (fd !== undefined) fs.closeSync(fd); }
 }
