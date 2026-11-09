@@ -81,9 +81,24 @@ test('keyboard references retain normal local/global/environment interpolation a
 });
 
 
-test('the key allowlist covers the pinned Playwright key layout without admitting invented key names',()=>{
- const path=require('node:path');const file=path.join(path.dirname(require.resolve('playwright-core/package.json')),'lib/server/usKeyboardLayout.js');const {USKeyboardLayout}=require(file);
- const supported=new Set(Object.keys(USKeyboardLayout));for(const value of Object.values(USKeyboardLayout)){if(!value.location&&value.key?.length===1)supported.add(value.key);if(!value.location&&value.shiftKey)supported.add(value.shiftKey);}for(const name of ['Shift','Control','Meta','Alt'])supported.add(name);
- for(const key of supported)if(!/[\x00-\x1f\x7f-\x9f]/.test(key))assert.equal(validateKey(key),key,key);
- for(const key of ['F13','F24','Clear','Help','Super','Ctrl'])assert.throws(()=>validateKey(key));
+test('the key allowlist accepts printable characters, physical keys and supported shortcuts', () => {
+ const printable = Array.from({ length: 95 }, (_, index) => String.fromCharCode(32 + index));
+ const functionKeys = Array.from({ length: 12 }, (_, index) => `F${index + 1}`);
+ const digits = Array.from({ length: 10 }, (_, index) => index);
+ const supported = [
+  ...printable, ...functionKeys,
+  ...Array.from('ABCDEFGHIJKLMNOPQRSTUVWXYZ', letter => `Key${letter}`),
+  ...digits.flatMap(digit => [`Digit${digit}`, `Numpad${digit}`]),
+  'Backquote', 'Minus', 'Equal', 'BracketLeft', 'BracketRight', 'Backslash',
+  'Semicolon', 'Quote', 'Comma', 'Period', 'Slash', 'NumpadAdd', 'NumpadSubtract',
+  'NumpadMultiply', 'NumpadDivide', 'NumpadDecimal', 'NumpadEnter',
+  'Enter', 'Tab', 'Escape', 'Backspace', 'Delete', 'Insert', 'Home', 'End', 'PageUp', 'PageDown',
+  'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'CapsLock', 'NumLock', 'ScrollLock',
+  'Pause', 'PrintScreen', 'ContextMenu', 'AltGraph', 'Shift', 'Control', 'Alt', 'Meta',
+  'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight',
+  'AudioVolumeMute', 'AudioVolumeDown', 'AudioVolumeUp', 'MediaTrackNext', 'MediaTrackPrevious', 'MediaPlayPause',
+  'ControlOrMeta+A', 'Shift+Tab', 'Alt+ArrowLeft', 'Control+Shift+Digit1',
+ ];
+ for (const key of supported) assert.equal(validateKey(key), key, key);
+ for (const key of ['F13', 'F24', 'Clear', 'Help', 'Super', 'Ctrl', 'Key1', 'Numpad10']) assert.throws(() => validateKey(key));
 });
