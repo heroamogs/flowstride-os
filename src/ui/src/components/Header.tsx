@@ -35,6 +35,7 @@ export const Header = ({ isRightPanelOpen, onToggleRightPanel }: any) => {
   }, [isRunning, incrementTimer]);
 
   const handleRerun = () => {
+    if (isRunning) return;
     startExecution();
     sendToRunner("RERUN_REQ", { filePath: activeTestFile });
   };
@@ -126,7 +127,7 @@ export const Header = ({ isRightPanelOpen, onToggleRightPanel }: any) => {
                 fontWeight: "600",
               }}
             >
-              {isRunning ? "Running" : runStatus === "failed" ? "Failed" : runStatus === "interrupted" ? "Interrupted" : runStatus === "incomplete" ? "Incomplete" : "Complete"}
+              {isRunning ? "Running" : runStatus === "failed" ? "Failed" : runStatus === "interrupted" ? "Interrupted" : runStatus === "incomplete" ? "Incomplete" : runStatus === "skipped" ? "Skipped" : "Complete"}
             </span>
             <span
               style={{
@@ -173,6 +174,7 @@ export const Header = ({ isRightPanelOpen, onToggleRightPanel }: any) => {
         {!isRunning ? (
           <button
             onClick={handleRerun}
+            disabled={isRunning}
             style={{
               background: "none",
               border: "1px solid #30363d",
@@ -207,6 +209,7 @@ export const Header = ({ isRightPanelOpen, onToggleRightPanel }: any) => {
         )}
         <button
           onClick={handleRerun}
+            disabled={isRunning}
           style={{
             background: "none",
             border: "1px solid #30363d",

@@ -114,7 +114,7 @@ export function readPrivateState(root: string, relative: string, limit = MAX_STA
     return fs.readFileSync(fd, 'utf8');
   } finally { fs.closeSync(fd); }
 }
-export function writePrivateState(root: string, relative: string, data: string) {
+export function writePrivateState(root: string, relative: string, data: string | Buffer) {
   if (Buffer.byteLength(data) > MAX_STATE) throw new PrivateStateError('Private-state value exceeds 64 MiB.');
   const file = privateStatePath(root, relative);
   const directory = ensurePrivateDirectory(root, path.posix.dirname(relative) === '.' ? '' : path.posix.dirname(relative));

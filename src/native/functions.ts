@@ -1,6 +1,6 @@
 import { AssertionFailure, assertionCheck, reportAssertion, diagnosticValue, type AssertionResult, type AssertionReporter } from '../reporting/assertion_result';
 import { z } from 'zod';
-import type { Page, Disposable } from 'playwright';
+import type { Page, Frame, Disposable } from 'playwright';
 import { positive, name, poll } from './validation';
 import { isDeepStrictEqual } from 'node:util';
 const target = z.string().min(1).refine(value => value.split('.').every(key => /^[a-zA-Z_$][\w$]*$/.test(key) && !['__proto__','prototype','constructor'].includes(key)), 'Use a safe dotted function path.');
@@ -26,14 +26,15 @@ function install(data: z.infer<typeof schema>) {
   registry[data.name] = { calls, restore: () => { if (own) Object.defineProperty(object, key, own); else delete object[key]; } };
 }
 export class NativeFunctions {
-  private installed = new Map<string, { name:string; target:string; page: Page; script?: Disposable }>();
-  private pages = new WeakMap<Page,number>(); private counter = 0;
-  private key(page: Page, name: string) { if (!this.pages.has(page)) this.pages.set(page, ++this.counter); return `${this.pages.get(page)}:${name}`; }
-  async execute(page: Page, action: string, input: unknown, timeout: number, reporter?: AssertionReporter) {
+  private installed = new Map<string, { name:string; target:string; page: Page | Frame; script?: Disposable }>();
+  private pages = new WeakMap<Page | Frame,number>(); private counter = 0;
+  private key(page: Page | Frame, name: string) { if (!this.pages.has(page)) this.pages.set(page, ++this.counter); return `${this.pages.get(page)}:${name}`; }
+  async execute(page: Page | Frame, action: string, input: unknown, timeout: number, reporter?: AssertionReporter) {
     if (action === 'install') {
       const data = schema.parse(input);
       if (this.installed.has(this.key(page,data.name))) throw new Error('Function double name already exists; restore it first.');
-      const script = data.beforeLoad ? await page.addInitScript(install, data) : undefined;
+      if (data.beforeLoad && !('addInitScript' in page)) throw new Error('beforeLoad function doubles are page-level. Use flow.frame.main {} first, or install the double after entering the loaded iframe.');
+      const script = data.beforeLoad ? await (page as Page).addInitScript(install, data) : undefined;
       try { if (!data.beforeLoad || page.url() !== 'about:blank') await page.evaluate(install, data); }
       catch (error) { await script?.dispose(); throw error; }
       this.installed.set(this.key(page,data.name), { name:data.name, target:data.target, page, script }); return;
@@ -74,7 +75,7 @@ export class NativeFunctions {
     for (const entry of this.installed.values()) {
       const name = entry.name;
       await entry.script?.dispose().catch(() => {});
-      if (!entry.page.isClosed()) await entry.page.evaluate(name => { const registry = (window as any)[Symbol.for('flowstride.function-doubles')]; registry?.[name]?.restore(); if (registry) delete registry[name]; }, name).catch(() => {});
+      if (!('isClosed' in entry.page ? entry.page.isClosed() : entry.page.isDetached())) await entry.page.evaluate(name => { const registry = (window as any)[Symbol.for('flowstride.function-doubles')]; registry?.[name]?.restore(); if (registry) delete registry[name]; }, name).catch(() => {});
     }
     this.installed.clear();
   }

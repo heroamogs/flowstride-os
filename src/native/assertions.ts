@@ -1,3 +1,6 @@
+import type { WebAdapter } from '../adapters/web/playwright';
+import { readableTargetSchema, readableTargetDescription } from './targeting';
+import { parseDataPath, readBrowserProperty } from './paths';
 import path from 'node:path';
 import { z } from 'zod';
 import type { Page } from 'playwright';
@@ -17,41 +20,47 @@ async function installAccessibilityNames(page: Page) {
   const source = await accessibilityBundle;
   for (const frame of page.frames()) await frame.evaluate(source);
 }
-const schema = z.object({ selector: z.string().optional(), role: z.string().optional(), name: z.string().optional(), frame: z.string().optional(),
+const schema = z.object({ target: readableTargetSchema.optional(), message: z.string().min(1).max(1500).optional(), selector: z.string().min(1).optional(), role: z.string().min(1).optional(), name: z.string().optional(), frame: z.string().optional(),
   condition: z.enum(['visible','hidden','attached','enabled','disabled','editable','checked','empty','focused','text','containsText','value','values','count','attribute','css','id','property','accessibleName','accessibleDescription','inViewport','url','title','localStorage','sessionStorage']),
   value: z.unknown().optional(), attribute: z.string().optional(), property: z.string().optional(), key: z.string().optional(),
   matches: z.string().optional(), flags: z.string().regex(/^[imsu]*$/).optional(), not: z.boolean().default(false), timeout: positive.optional(),
 }).strict();
-export async function assertBrowser(page: Page, input: unknown, defaultTimeout: number, reporter?: AssertionReporter): Promise<void> {
+export async function assertBrowser(page: Page, input: unknown, defaultTimeout: number, reporter?: AssertionReporter, web?: Pick<WebAdapter, 'resolveAssertionTarget'> & Partial<Pick<WebAdapter,'getScope'>>): Promise<void> {
   const data = schema.parse(input), timeout = data.timeout ?? defaultTimeout, started = Date.now();
   const expected: any = data.matches !== undefined ? new RegExp(data.matches, data.flags) : data.value;
   const equals = (actual: unknown) => expected instanceof RegExp ? typeof actual === 'string' && expected.test(actual) : isDeepStrictEqual(actual, expected);
-  const scope = data.frame ? page.frameLocator(data.frame) : page;
+  const activeScope = web?.getScope?.() || page;
+  const scope = data.frame ? activeScope.frameLocator(data.frame) : activeScope;
   const elementCondition = !['url','title','localStorage','sessionStorage'].includes(data.condition);
-  if (elementCondition && !!data.selector === !!data.role) throw new Error('Choose one selector or role.');
-  const locator = data.role ? scope.getByRole(data.role as any, { name: data.name, exact: true }) : scope.locator(data.selector || 'body');
+  if (elementCondition && [data.target, data.selector, data.role].filter(value => value !== undefined).length !== 1) throw new Error('Choose exactly one target, selector or role.');
+  if (data.target !== undefined && data.name !== undefined) throw new Error('name belongs to role targeting; use text inside target instead.');
+  if (!elementCondition && data.target !== undefined) throw new Error('Page/storage assertions do not take an element target.');
+  if (data.target !== undefined && !web) throw new Error('Textual assertions require a Flowstride browser adapter.');
+  if (data.condition === 'property' && data.property) parseDataPath(data.property);
+  let locator = data.role ? scope.getByRole(data.role as any, { name: data.name, exact: true }) : scope.locator(data.selector || 'body');
   const booleanConditions = ['visible','hidden','attached','enabled','disabled','editable','checked','empty','focused','inViewport'];
   if (!booleanConditions.includes(data.condition) && data.condition !== 'attribute' && expected === undefined) throw new Error('This assertion requires value or matches.');
   if (data.condition === 'attribute' && !data.attribute || ['css','property'].includes(data.condition) && !data.property || ['localStorage','sessionStorage'].includes(data.condition) && !data.key) throw new Error('Assertion requires an attribute, property, or storage key.');
   if (data.condition === 'count' && (!Number.isSafeInteger(expected) || expected < 0)) throw new Error('Count requires a nonnegative integer.');
-  const target = elementCondition ? (data.role ? `${data.role}${data.name === undefined ? '' : ' named '+JSON.stringify(data.name)}` : data.selector!) + (data.frame ? ` inside frame ${data.frame}` : '') : data.key ? `${data.condition} key ${JSON.stringify(data.key)}` : `page ${data.condition}`;
+  const target = elementCondition ? (data.target !== undefined ? readableTargetDescription(data.target) : data.role ? `${data.role}${data.name === undefined ? '' : ' named '+JSON.stringify(data.name)}` : data.selector!) + (data.frame ? ` inside frame ${data.frame}` : '') : data.key ? `${data.condition} key ${JSON.stringify(data.key)}` : `page ${data.condition}`;
   const needsSingle = elementCondition && !['count','attached'].includes(data.condition);
-  let latest: AssertionResult = reportAssertion('assert.that', target, [{ key:'target',label:'Target lookup: '+target,status:'running' },{key:'condition',label:'condition: '+data.condition,status:'not_evaluated'}], reporter, { status:'running', timeout, elapsed:0 });
+  let latest: AssertionResult = reportAssertion('assert.that', target, [{ key:'target',label:'Target lookup: '+target,status:'running' },{key:'condition',label:'condition: '+data.condition,status:'not_evaluated'}], reporter, { status:'running', timeout, elapsed:0, ...(data.message ? {message:diagnosticValue(data.message)} : {}) });
   let closed = false, lastReadError: string | undefined;
   const progress = (checks: AssertionCheck[]) => {
     if (closed) return;
-    latest = reportAssertion('assert.that', target, checks, reporter, { status:'running', timeout, elapsed:Date.now()-started });
+    latest = reportAssertion('assert.that', target, checks, reporter, { status:'running', timeout, elapsed:Date.now()-started, ...(data.message ? {message:diagnosticValue(data.message)} : {}) });
   };
   try {
     await poll(async () => {
       let count: number | undefined, roleCount: number | undefined, actual: unknown, matched = false, evaluated = false;
-      let sensitive = !!data.key && /password|passcode|token|secret|authorization|cookie|api.?key|otp/i.test(data.key);
+      let sensitive = /password|passcode|token|secret|authorization|cookie|api.?key|otp/i.test([data.key,data.property,data.attribute].filter(Boolean).join(' '));
       lastReadError = undefined;
       try {
         if (elementCondition) {
+          if (data.target !== undefined) locator = await web!.resolveAssertionTarget(data.target, data.frame);
           count = await locator.count();
           roleCount = data.role && data.name !== undefined && count === 0 ? await scope.getByRole(data.role as any).count() : count;
-          if (count === 1 && (['value','values'].includes(data.condition) || data.attribute === 'value' || data.property === 'value')) {
+          if (count === 1 && (['value','values'].includes(data.condition) || data.attribute === 'value' || ['value','defaultValue','textContent','innerHTML','outerHTML'].includes(data.property || ''))) {
             sensitive ||= await locator.evaluate(element => {
               const hints = ['type','name','id','autocomplete'].map(key=>element.getAttribute(key)||'').join(' ');
               return /password|passcode|token|secret|authorization|cookie|api.?key|one-time-code|otp/i.test(hints);
@@ -62,9 +71,9 @@ export async function assertBrowser(page: Page, input: unknown, defaultTimeout: 
           evaluated = true;
           if (['accessibleName','accessibleDescription'].includes(data.condition)) await installAccessibilityNames(page);
           switch (data.condition) {
-            case 'url': actual=page.url(); matched=equals(actual); break;
-            case 'title': actual=await page.title(); matched=equals(actual); break;
-            case 'localStorage': case 'sessionStorage': actual=await page.evaluate(({kind,key})=>window[kind].getItem(key),{kind:data.condition,key:data.key!});matched=equals(actual);break;
+            case 'url': actual=activeScope.url(); matched=equals(actual); break;
+            case 'title': actual=await activeScope.title(); matched=equals(actual); break;
+            case 'localStorage': case 'sessionStorage': actual=await activeScope.evaluate(({kind,key})=>window[kind].getItem(key),{kind:data.condition,key:data.key!});matched=equals(actual);break;
             case 'count':actual=count;matched=equals(actual);break;
             case 'attached':actual=count!>0;matched=actual===true;break;
             case 'hidden':actual=count===0||await locator.isHidden();matched=actual===true;break;
@@ -82,7 +91,7 @@ export async function assertBrowser(page: Page, input: unknown, defaultTimeout: 
             case 'attribute':actual=await locator.getAttribute(data.attribute!);matched=expected===undefined?actual!==null:equals(actual);break;
             case 'id':actual=await locator.getAttribute('id');matched=equals(actual);break;
             case 'css':actual=await locator.evaluate((element,key)=>getComputedStyle(element).getPropertyValue(key),data.property!);matched=equals(actual);break;
-            case 'property':actual=await locator.evaluate((element,key)=>(element as any)[key],data.property!);matched=equals(actual);break;
+            case 'property':actual=await readBrowserProperty(locator,data.property!);matched=equals(actual);break;
             case 'accessibleName':case 'accessibleDescription':actual=await locator.evaluate((element,condition)=>{const api=(element.ownerDocument.defaultView as any).__FLOWSTRIDE_ACCESSIBILITY_NAMES__;return condition==='accessibleName'?api.computeAccessibleName(element):api.computeAccessibleDescription(element);},data.condition);matched=equals(actual);break;
             case 'inViewport':actual=await locator.evaluate(element=>{const box=element.getBoundingClientRect();return box.width>0&&box.height>0&&box.bottom>0&&box.right>0&&box.top<innerHeight&&box.left<innerWidth;});matched=actual===true;break;
           }
@@ -98,6 +107,10 @@ export async function assertBrowser(page: Page, input: unknown, defaultTimeout: 
         lookup.children=[];
         if(data.role)lookup.children.push(part('role','role: '+data.role,roleCount===undefined?undefined:roleCount>0));
         if(data.name!==undefined)lookup.children.push(part('name','name: '+data.name,count===undefined||!roleCount?undefined:count>0));
+        if(data.target !== undefined) {
+          const fields = typeof data.target === 'string' ? {text:data.target} : data.target;
+          for (const [key,value] of Object.entries(fields)) lookup.children.push(part(key,key+': '+String(value),count===undefined?undefined:count>0));
+        }
         if(data.selector)lookup.children.push(part('selector','selector: '+data.selector,count===undefined?undefined:count>0));
         checks.push(lookup);
         if(needsSingle&&count!==0)checks.push(count===undefined?{key:'unique',label:'Exactly one matching target',status:'not_evaluated'}:assertionCheck('unique','Exactly one matching target',count===1,1,count));

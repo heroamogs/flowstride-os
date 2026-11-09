@@ -1,10 +1,20 @@
+import { isWorkflowToken, prepareWorkflowFeatures } from '../native/workflow_plan';
+import { cleanupRegistration, resolveCleanupTarget, ScenarioCleanup } from '../native/scenario_cleanup';
+import { caseRows, type CaseScenario, type CaseInfo } from '../native/data_plan';
+import { loadDataSchema, casesSchema, loadProjectData, dataSecrets } from '../native/project_data';
+import { interpolateData, hasExactDataReference } from '../native/data_references';
+import { isSensitiveField } from '../security/sensitiveFields';
+import { ExecutionControl, isPauseId } from './execution_control';
+import { isCIEnvironment } from '../ci/config';
+import { poll } from '../native/validation';
+import { dataSnapshot, readBrowserProperty } from '../native/paths';
 import { replaySecretValues } from "../security/manualReplay";
 import { redactPayload } from "../security/redaction";
 import { evidenceDirectory, prepareEvidenceFile, protectEvidenceTree, screenshotEvidence } from '../security/evidence';
 import { readPrivateState, writePrivateState, stateSessionFile } from "../security/privateState";
 import { commandSecrets, runtimeFailure } from '../reporting/runtime_failure';
 import { assertionText, commandLabel, failedAssertion, unexecutedAssertion, type AssertionResult } from '../reporting/assertion_result';
-import { validateExpectationType, validateApiAssertions, validateResponseTimeThreshold } from '../parser/assertion_contract';
+import { validateExpectationType, validateApiAssertions, validateResponseTimeThreshold, validateControlDuration, validateControlMessage, isSoftAssertionStep } from '../parser/assertion_contract';
 import { nativeStepTimeout } from '../native/deadline';
 import { NativeRuntime } from '../native/runtime';
 import { withDeadline } from '../ci/deadline';
@@ -47,6 +57,22 @@ export interface SmartSelectorToken {
 export class FlowWorker extends EventEmitter {
   public static readonly nativeBrowserProtocol = 2;
   public static readonly nativeAssertionProtocol = 1;
+  public static readonly nativeValueProtocol = 1;
+  public static readonly nativeControlProtocol = 1;
+  public static readonly nativeInteractionProtocol = 1;
+  public static readonly nativeBrowsingProtocol = 1;
+  public static readonly nativeDataProtocol = 1;
+  public static readonly nativeWorkflowProtocol = 1;
+  public static readonly nativeApiProtocol = 1;
+  public static readonly nativeApplicationEvidenceProtocol = 1;
+  private control = new ExecutionControl(
+    pause => this.broadcast('EXECUTION_PAUSED', pause),
+    pause => this.broadcast('EXECUTION_RESUMED', pause),
+  );
+  private paceMilliseconds = 0;
+  private currentScenarioName = '';
+  private currentStepId = '';
+  private currentStepLine?: number;
   private isSilent = process.env.FLOWSTRIDE_PARALLEL === "true";
   private isAborted = false;
   private bailTriggered = false;
@@ -68,12 +94,125 @@ export class FlowWorker extends EventEmitter {
   private dataGen: DataGenerators | null = null;
 
   private localVariables: Record<string, any> = {};
+  private extractedSecretValues = new Set<string>();
+  private static extractedGlobalSecretValues = new Set<string>();
   private localBrowserSessions: Record<string, any> = {};
 
   private static globalVariables: Record<string, any> = {};
   private static globalBrowserSessions: Record<string, any> = {};
 
   private lastApiUrl: string = "";
+
+  private dataAliases = new Set<string>();
+  private currentDataCase?: CaseInfo;
+  private caseGroup?: { group:string; state:any; rows:Record<string,unknown>[] };
+
+  private async executeDataStep(method:string,input:unknown):Promise<void> {
+    if(method==='data.seed'){
+      if(!this.dataGen)this.dataGen=new DataGenerators();
+      const context=JSON.stringify([this.currentFileName,this.currentDataCase?.scenario||this.currentScenarioName,this.currentDataCase?.index??null]);
+      this.dataGen.setSeed(input as string,context);return;
+    }
+    if(method==='data.cases'){
+      const declaration=casesSchema.parse(dataSnapshot(input));
+      if(!this.currentDataCase || declaration.as!==this.currentDataCase.binding || path.resolve(this.config.projectRoot||process.cwd(),declaration.file)!==path.resolve(this.config.projectRoot||process.cwd(),this.currentDataCase.file))throw new Error('flow.data.cases must be planned as the first command in Given; it cannot be invoked as an ordinary runtime loop.');
+      return;
+    }
+    if(!['data.load','file.read'].includes(method))throw new Error(`Unknown project-data command: flow.${method}`);
+    const data=loadDataSchema.parse(dataSnapshot(input)),loaded=loadProjectData(this.config,data.file,data.format);
+    Object.defineProperty(this.localVariables,data.as,{value:loaded.value,writable:true,enumerable:true,configurable:true});
+    this.dataAliases.add(data.as);
+    for(const secret of dataSecrets(loaded.value,isSensitiveField(data.as)))this.extractedSecretValues.add(secret);
+  }
+  private async checkpointCaseState() {
+    return { profiles:await this.web.checkpointProfiles(), variables:structuredClone(this.localVariables), sessions:structuredClone(this.localBrowserSessions), globals:structuredClone(FlowWorker.globalVariables), globalSessions:structuredClone(FlowWorker.globalBrowserSessions), store:structuredClone(this.store.getAll?.()), api:this.api.checkpointState?.(), aliases:[...this.dataAliases], generator:this.dataGen?.checkpoint() };
+  }
+  private async restoreCaseState(state:any) {
+    await this.native.dispose();
+    this.localVariables=structuredClone(state.variables);this.localBrowserSessions=structuredClone(state.sessions);
+    FlowWorker.globalVariables=structuredClone(state.globals);FlowWorker.globalBrowserSessions=structuredClone(state.globalSessions);
+    if(state.store){this.store.clear();for(const[key,value]of Object.entries(structuredClone(state.store)))this.store.set(key,value);}
+    if(state.api)this.api.restoreState(state.api);else this.api.resetState();
+    this.dataAliases=new Set(state.aliases);if(state.generator){this.dataGen=new DataGenerators(state.generator.runId,state.generator.workerId);this.dataGen.restore(state.generator);}
+    await this.web.restoreProfiles(state.profiles);
+  }
+  private async runPreparedScenario(scenario:CaseScenario,declarations:DeclarationNode[]):Promise<boolean> {
+    const info=scenario.dataCase;
+    if(this.caseGroup && this.caseGroup.group!==info?.group){await this.restoreCaseState(this.caseGroup.state);this.caseGroup=undefined;this.currentDataCase=undefined;}
+    if(info){
+      if(!this.caseGroup){
+        const loaded=caseRows(this.config,info.file,info.format);
+        if(loaded.sha256!==info.sha256)throw new Error(`Dataset ${JSON.stringify(info.file)} changed after planning. Start a new run.`);
+        for(const secret of dataSecrets(loaded.rows))this.extractedSecretValues.add(secret);
+        this.caseGroup={group:info.group,state:await this.checkpointCaseState(),rows:loaded.rows};
+      }else await this.restoreCaseState(this.caseGroup.state);
+      this.currentDataCase=info;
+      const row=dataSnapshot(this.caseGroup.rows[info.index]);
+      Object.defineProperty(this.localVariables,info.binding,{value:row,writable:true,enumerable:true,configurable:true});this.dataAliases.add(info.binding);
+      if(this.dataGen?.isSeeded())this.dataGen=this.dataGen.fork(JSON.stringify([this.currentFileName,info.scenario,info.index]));
+    }else this.currentDataCase=undefined;
+    return this.runScenarioWithRetries(scenario,declarations);
+  }
+
+  private activeCleanup?: ScenarioCleanup;
+  private cleanupReport?: Promise<boolean>;
+
+  private reportSkippedScenario(scenario: ScenarioNode): void {
+    const reason = scenario.skipReason!;
+    this.currentScenarioName = scenario.name;
+    this.currentDataCase = undefined;
+    const fileName = this.currentFileName;
+    this.broadcast('RUN_START', { fileName, scenarioName: scenario.name });
+    this.broadcast('SCENARIO_ATTEMPT', { fileName, scenario: scenario.name, attempt: 1 });
+    for (const step of scenario.steps) {
+      const [type] = step.blockDescription.split(' ');
+      const payload = {
+        id: step.id,
+        fileName,
+        scenario: scenario.name,
+        commandLabel: commandLabel(step.action, step.payload),
+        sourceLine: step.line,
+        status: 'skipped',
+        skipReason: reason,
+        userMessage: reason,
+      };
+      this.broadcast('STEP_ADD', { ...payload, type, command: step.action, description: step.blockDescription.slice(type.length).trim() });
+      this.broadcast('STEP_UPDATE', payload);
+    }
+    this.broadcast('SCENARIO_RESULT', { fileName, scenario: scenario.name, attempt: 1, status: 'skipped', skipReason: reason, duration: 0 });
+    if (!this.isSilent) console.log(redactText(`    [Skipped] ${scenario.name}: ${reason}`, this.secretValues()));
+  }
+
+  private finishScenarioCleanup(): Promise<boolean> {
+    if (this.cleanupReport) return this.cleanupReport;
+    if (!this.activeCleanup?.hasEntries) return Promise.resolve(false);
+    return this.cleanupReport ??= this.reportCleanup(this.activeCleanup);
+  }
+
+  private async reportCleanup(cleanup: ScenarioCleanup): Promise<boolean> {
+    let failed = false;
+    for (const outcome of await cleanup.drain()) {
+      const { step, status, error } = outcome;
+      failed ||= !!error;
+      const file = step.sourceFile || this.currentFileName;
+      const diagnostic = error ? `${file}:${step.line}: ${error}` : undefined;
+      const message = error || `Cleanup DELETE completed (HTTP ${status}).`;
+      this.broadcast('STEP_UPDATE', {
+        id: step.id,
+        fileName: this.currentFileName,
+        sourceFile: file,
+        sourceLine: step.line,
+        status: error ? 'failed' : 'passed',
+        cleanupStatus: status,
+        error: diagnostic || null,
+        userMessage: message,
+      });
+      this.emitLog(error ? 'ERROR' : 'ACTION', error ? 'error' : 'info',
+        diagnostic || message, { stepId: step.id, commandLabel: 'flow.cleanup.register' });
+      if (!this.isSilent) console.log(redactText(`    [Cleanup] ${diagnostic || message}`, this.secretValues()));
+    }
+    return failed;
+  }
 
   constructor(
     private config: FlowstrideConfig,
@@ -84,22 +223,35 @@ export class FlowWorker extends EventEmitter {
     private pluginManager?: PluginManager,
   ) {
     super();
-    this.native = new NativeRuntime(web, config);
+    this.native = new NativeRuntime(web, config, {delay:ms => this.control.delay(ms),cancelled:() => this.isAborted});
     this.web.onPageChanged = async () => { await this.startStreaming(); await this.setupNetworkInterception(); };
   }
 
   private broadcast(type: string, payload: any) {
-    if (["STEP_ADD","STEP_UPDATE","LOG_EVENT"].includes(type)) payload = { ...payload, attempt: this.attempt, profile: this.web.activeProfile || "default" };
-    this.emit('worker_event', { type, payload: redactWorkerPayload(type, payload, this.secretValues(), this.config.ci === false) });
+    if(this.currentDataCase){
+      const info={index:this.currentDataCase.index+1,total:this.currentDataCase.total,file:this.currentDataCase.file};
+      if(['RUN_START','SCENARIO_ATTEMPT','SCENARIO_RESULT'].includes(type))payload={...payload,dataCase:info};
+      if(type==='STEP_ADD'&&typeof payload.description==='string'&&!payload.description.endsWith(`· Case ${info.index}/${info.total}`))payload={...payload,description:payload.description+` · Case ${info.index}/${info.total}`};
+    }
+    if (["STEP_ADD","STEP_UPDATE","LOG_EVENT"].includes(type)) payload = { ...payload, ...(this.currentDataCase ? {dataCase:{index:this.currentDataCase.index+1,total:this.currentDataCase.total,file:this.currentDataCase.file},scenario:this.currentScenarioName} : {}), attempt: this.attempt, profile: this.web.activeProfile || "default" };
+    const safe = redactWorkerPayload(type, payload, this.secretValues(), this.config.ci === false);
+    if (['EXECUTION_PAUSED','EXECUTION_RESUMED'].includes(type) && isPauseId(payload?.id)) {
+      // A generated routing identifier is opaque, not application data or a credential.
+      safe.id = payload.id;
+      // Redaction can expand strings, so bound presentation fields after sanitization.
+      if (typeof safe.message === 'string') safe.message = safe.message.slice(0,32768);
+      for (const field of ['fileName','scenario','stepId','profile']) if (typeof safe[field] === 'string') safe[field] = safe[field].slice(0,4096);
+    }
+    this.emit('worker_event', { type, payload: safe });
   }
 
   private secretValues(): string[] {
-    return [...this.commandSecretValues, this.config.machineToken || '', ...(this.dataGen?.sensitiveValues?.() || []), ...Object.entries(process.env).filter(([key]) => /password|token|secret|api.?key/i.test(key)).map(([,value]) => String(value)), ...Object.entries(this.localVariables).filter(([key]) => /password|passcode|token|secret|otp|api.?key/i.test(key)).map(([,value]) => String(value))];
+    return [...FlowWorker.extractedGlobalSecretValues, ...this.extractedSecretValues, ...this.commandSecretValues, this.config.machineToken || '', ...(this.dataGen?.sensitiveValues?.() || []), ...Object.entries(process.env).filter(([key]) => /password|token|secret|api.?key/i.test(key)).map(([,value]) => String(value)), ...Object.entries(this.localVariables).filter(([key]) => /password|passcode|token|secret|otp|api.?key/i.test(key)).map(([,value]) => String(value))];
   }
 
   private assertionForStep(step: any): AssertionResult | undefined {
     if (!this.currentAssertion) return;
-    const value = { ...this.currentAssertion, sourceFile:this.currentFileName, sourceLine:step.line, profile:this.web.activeProfile || 'default' };
+    const value = { ...this.currentAssertion, sourceFile:step.sourceFile || this.currentFileName, sourceLine:step.line, profile:this.web.activeProfile || 'default' };
     return redactWorkerPayload('STEP_UPDATE', { assertion:value }, this.secretValues()).assertion;
   }
 
@@ -198,9 +350,9 @@ export class FlowWorker extends EventEmitter {
 
   private resolveTemplateData(obj: any): any {
     if (typeof obj === "string") {
-      let text = this.resolveTextVariables(obj);
-      if (this.dataGen) text = this.dataGen.resolve(text);
-      return text;
+      return interpolateData(obj,this.dataAliases,this.localVariables,text=>{
+        let resolved=this.resolveTextVariables(text);if(this.dataGen)resolved=this.dataGen.resolve(resolved);return resolved;
+      });
     }
     if (Array.isArray(obj))
       return obj.map((item) => this.resolveTemplateData(item));
@@ -212,6 +364,79 @@ export class FlowWorker extends EventEmitter {
       return resolvedObj;
     }
     return obj;
+  }
+
+  private resolveTypedAssertionValue(value: any, strictMissing = true): any {
+    if (typeof value === 'string') {
+      if(hasExactDataReference(value,this.dataAliases))return interpolateData(value,this.dataAliases,this.localVariables,text=>this.resolveTemplateData(text),true);
+      const global = /^@global\[([A-Za-z_]\w*)\]$/.exec(value);
+      const local = /^@([A-Za-z_]\w*)$/.exec(value);
+      if (global || local) {
+        const key = (global || local)![1], source = global ? FlowWorker.globalVariables : this.localVariables;
+        if (!Object.hasOwn(source, key)) {
+          if (local && !strictMissing) return this.resolveTemplateData(value);
+          if (local && this.dataGen) { const generated = this.resolveTemplateData(value); if (generated !== value) return generated; }
+          throw new Error(`State Error: Assertion variable "${value}" is undefined.`);
+        }
+        return dataSnapshot(source[key]);
+      }
+      return this.resolveTemplateData(value);
+    }
+    if (Array.isArray(value)) return value.map(item => this.resolveTypedAssertionValue(item,strictMissing));
+    if (value !== null && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key,item]) => [key,this.resolveTypedAssertionValue(item,strictMissing)]));
+    return value;
+  }
+
+  private resolveStepPayload(payload: any): any {
+    if (payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data) &&
+        (payload.pluginMethod?.startsWith('api.') || payload.pluginMethod === 'channel.expect' || payload.pluginMethod === 'network.route' && Object.hasOwn(payload.data, 'requestBody'))) {
+      const { data, ...rest } = payload;
+      const resolved = this.resolveTemplateData(rest);
+      const typed = new Set(['equals', 'json', 'query', 'form', 'multipart', 'requestBody']);
+      resolved.data = Object.fromEntries(Object.entries(data).map(([key, value]) => [key,
+        typed.has(key) ? this.resolveTypedAssertionValue(value, false) : this.resolveTemplateData(value)]));
+      return resolved;
+    }
+    if(payload?.pluginMethod==='files.select' && payload.data && typeof payload.data==='object'){
+      const result=this.resolveTemplateData(payload);if(Object.hasOwn(payload.data,'files'))result.data.files=this.resolveTypedAssertionValue(payload.data.files,false);return result;
+    }
+    if ((payload?.pluginMethod === 'assert.value' || payload?.pluginMethod === 'assert.that') && payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data)) {
+      const { data, ...rest } = payload;
+      const resolved = this.resolveTemplateData(rest);
+      const fields = payload.pluginMethod === 'assert.value' ? ['actual','expected'] : data.condition === 'count' || data.condition === 'values' || data.condition === 'property' && typeof data.property === 'string' && /[.\[]/.test(data.property) ? ['value'] : [];
+      resolved.data = Object.fromEntries(Object.entries(data).map(([key,value]) => [key, fields.includes(key) ? this.resolveTypedAssertionValue(value,payload.pluginMethod === 'assert.value') : this.resolveTemplateData(value)]));
+      return resolved;
+    }
+    return this.resolveTemplateData(payload);
+  }
+
+  private trackExtractionSecrets(value: any, sensitive = false, global = false): void {
+    const secrets = global ? FlowWorker.extractedGlobalSecretValues : this.extractedSecretValues;
+    const seen = new WeakMap<object, boolean>();
+    const pending: { value: unknown; sensitive: boolean }[] = [{ value, sensitive }];
+    while (pending.length) {
+      const item = pending.pop()!;
+      if (typeof item.value === 'string') {
+        if (item.sensitive && item.value) secrets.add(item.value);
+        continue;
+      }
+      if (typeof item.value === 'number') {
+        if (item.sensitive && Number.isFinite(item.value)) secrets.add(String(item.value));
+        continue;
+      }
+      if (item.value === null || typeof item.value !== 'object') continue;
+      const previous = seen.get(item.value);
+      // A shared object may first appear under an ordinary key and later under a secret key.
+      if (previous === true || previous === false && !item.sensitive) continue;
+      seen.set(item.value, item.sensitive);
+      let descriptors: PropertyDescriptorMap;
+      try { descriptors = Object.getOwnPropertyDescriptors(item.value); }
+      catch { continue; } // Metadata must not make a previously valid legacy extraction fail.
+      for (const [key, descriptor] of Object.entries(descriptors)) {
+        if (!Object.hasOwn(descriptor, 'value')) continue; // Never invoke application getters.
+        pending.push({ value: descriptor.value, sensitive: item.sensitive || /password|passcode|token|secret|authorization|cookie|api.?key|otp/i.test(key) });
+      }
+    }
   }
 
   private extractFromJsonPath(obj: any, path: string): any {
@@ -268,6 +493,7 @@ export class FlowWorker extends EventEmitter {
         );
       }
 
+      this.trackExtractionSecrets(val, ext.target === 'cookie' || /password|passcode|token|secret|authorization|cookie|api.?key|otp/i.test(ext.jsonPath || ''), !!ext.isGlobal);
       if (ext.isGlobal) FlowWorker.globalVariables[ext.variableName] = val;
       else this.localVariables[ext.variableName] = val;
     }
@@ -383,8 +609,14 @@ export class FlowWorker extends EventEmitter {
     }
   }
 
+  public resumePause(id: string): boolean { return this.control.resume(id); }
+
   public abort(): void {
     this.isAborted = true;
+    this.control.cancel();
+    this.api.cancelNativeRequests?.();
+    this.native.events.cancelRoutes();
+    this.native.applicationEvents.cancel();
   }
 
   public async runBatch(filesToProcess: string[]): Promise<boolean> {
@@ -397,8 +629,12 @@ export class FlowWorker extends EventEmitter {
       this.config.headless = false;
     }
 
+    const ownDataPlan=this.config.nativeDataManifest===undefined;
+    if(ownDataPlan)this.config.nativeDataManifest={};
     this.activeAudioPath = undefined;
+    this.control.reset();
     this.isAborted = false;
+    this.api.resetCancellation?.();
     this.bailTriggered = false;
     this.isDebugHalted = false;
 
@@ -414,6 +650,7 @@ export class FlowWorker extends EventEmitter {
       this.abort();
       this.broadcast("SERVER_SHUTDOWN", { message: "Terminal closed." });
       try {
+        await this.finishScenarioCleanup();
         await this.web.shutdown();
       } catch (e) {}
       if (!this.config.ci) process.exit(this.isAborted ? 130 : process.exitCode || 0);
@@ -424,11 +661,20 @@ export class FlowWorker extends EventEmitter {
     try {
       for (const filePath of filesToProcess) {
         const content = fs.readFileSync(filePath, "utf8");
-        const audioMatch = content.match(
-          /(?:flow\.)?injectAudio\s+["']([^"']+)["']/i,
-        );
-        if (audioMatch && audioMatch[1]) {
-          const rawPath = audioMatch[1];
+        let rawPath: string | undefined;
+        const mightUseWorkflow = this.config.scenarioTags?.length ||
+          /flow\.(?:call|skipIf|cleanup\.register)|^\s*Tags:/im.test(content);
+        const tokens = mightUseWorkflow ? new Lexer(content).tokenise() : undefined;
+        if (tokens && (this.config.scenarioTags?.length || tokens.some(isWorkflowToken))) {
+          const features = prepareWorkflowFeatures(new Parser(tokens).parse(), this.config);
+          rawPath = features.flatMap(feature => feature.scenarios)
+            .filter(scenario => !scenario.skipReason)
+            .flatMap(scenario => scenario.steps)
+            .find(step => step.action === 'injectAudio')?.payload.file;
+        } else {
+          rawPath = content.match(/(?:flow\.)?injectAudio\s+["']([^"']+)["']/i)?.[1];
+        }
+        if (rawPath) {
           const absolutePath = projectPath(process.cwd(), rawPath);
           if (!fs.existsSync(absolutePath)) {
             throw new Error(
@@ -449,11 +695,19 @@ export class FlowWorker extends EventEmitter {
           this.currentFileName = fileName;
           this.config.testFile = fileName;
 
-          this.localVariables = {};
+          this.localVariables = {}; this.dataAliases.clear(); this.currentDataCase=undefined; this.caseGroup=undefined;
           this.localBrowserSessions = {};
           this.api.resetState();
           this.dataGen = new DataGenerators();
+          const content = fs.readFileSync(filePath,'utf8');
+          const features=prepareWorkflowFeatures(new Parser(new Lexer(content).tokenise()).parse(), this.config);
 
+          const scenarios = features.flatMap(feature => feature.scenarios);
+          if (scenarios.length && scenarios.every(scenario => scenario.skipReason)) {
+            for (const scenario of scenarios) this.reportSkippedScenario(scenario);
+            this.broadcast('FILE_COMPLETE', { fileName, duration: Date.now() - fileStartTime });
+            continue;
+          }
           await this.native.dispose();
           await this.web.initialise(this.activeAudioPath);
           if (typeof this.web.getBrowserInfo === 'function') {
@@ -464,9 +718,11 @@ export class FlowWorker extends EventEmitter {
           await this.startStreaming();
           await this.setupNetworkInterception();
 
-          const content = fs.readFileSync(filePath, "utf8");
+
 
           const hasSessionIntent =
+            scenarios.some(scenario => !scenario.skipReason &&
+              scenario.steps.some(step => step.sourceFile && step.action === 'use')) ||
             content.includes("use session") ||
             content.includes("use global session");
           if (!hasSessionIntent) {
@@ -497,7 +753,7 @@ export class FlowWorker extends EventEmitter {
             );
           this.emitLog("FILE_HEADER", "info", fileName, { filePath });
 
-          const features = new Parser(new Lexer(content).tokenise()).parse();
+
 
           const hasOnlyMode = features.some((f) =>
             f.scenarios.some((s) => s.isOnly),
@@ -528,12 +784,17 @@ export class FlowWorker extends EventEmitter {
               if (!this.isSilent)
                 console.log(chalk.cyan(`    Scenario: ${s.name}`));
 
+              if (s.skipReason) {
+                this.reportSkippedScenario(s);
+                continue;
+              }
+              this.currentDataCase=(s as CaseScenario).dataCase;
               this.broadcast("RUN_START", {
                 scenarioName: s.name,
                 fileName: this.currentFileName,
               });
 
-              if (!await this.runScenarioWithRetries(s, f.declarations)) this.batchPassed = false;
+              if (!await this.runPreparedScenario(s, f.declarations)) this.batchPassed = false;
 
               if (this.isDebugHalted || this.bailTriggered) break;
 
@@ -569,7 +830,7 @@ export class FlowWorker extends EventEmitter {
 
             const targetVideoPath = prepareEvidenceFile(this.config, path.join(mockCloudDir, `${baseName}.webm`));
 
-            for (const message of this.web.pageErrors || []) this.broadcast('BROWSER_ERROR', { message, fileName: this.currentFileName });
+            for (const message of (this.web.pageErrors || []).filter(Boolean)) this.broadcast('BROWSER_ERROR', { message, fileName: this.currentFileName });
             await this.native.dispose();
             await this.web.shutdown(targetVideoPath);
             protectEvidenceTree(this.config, path.dirname(targetVideoPath));
@@ -608,7 +869,7 @@ export class FlowWorker extends EventEmitter {
 
             const targetVideoPath = prepareEvidenceFile(this.config, path.join(mockCloudDir, `${baseName}.webm`));
 
-            for (const message of this.web.pageErrors || []) this.broadcast('BROWSER_ERROR', { message, fileName: this.currentFileName });
+            for (const message of (this.web.pageErrors || []).filter(Boolean)) this.broadcast('BROWSER_ERROR', { message, fileName: this.currentFileName });
             await this.native.dispose();
             await this.web.shutdown(targetVideoPath);
             protectEvidenceTree(this.config, path.dirname(targetVideoPath));
@@ -650,6 +911,7 @@ export class FlowWorker extends EventEmitter {
         } catch (error: any) { this.broadcast('WORKER_ERROR', { message: error.message }); }
       }
       process.removeListener("SIGINT", sigintHandler);
+      if(ownDataPlan)delete this.config.nativeDataManifest;
     }
     return this.batchPassed && !this.isAborted && !this.isDebugHalted;
   }
@@ -661,6 +923,8 @@ export class FlowWorker extends EventEmitter {
     const globals = this.maxAttempts > 1 ? structuredClone(FlowWorker.globalVariables) : {}, globalSessions = this.maxAttempts > 1 ? structuredClone(FlowWorker.globalBrowserSessions) : {};
     const storeState = this.maxAttempts > 1 ? structuredClone(this.store.getAll?.()) : undefined;
     const apiState = this.maxAttempts > 1 ? this.api.checkpointState?.() : undefined;
+    const generatorState=this.maxAttempts>1?this.dataGen?.checkpoint():undefined;
+    const dataAliases=this.maxAttempts>1?[...this.dataAliases]:[];
     let finalPassed = false;
     for (this.attempt = 1; this.attempt <= this.maxAttempts; this.attempt++) {
       if (this.isAborted || this.isDebugHalted) break;
@@ -670,13 +934,32 @@ export class FlowWorker extends EventEmitter {
         FlowWorker.globalVariables = structuredClone(globals); FlowWorker.globalBrowserSessions = structuredClone(globalSessions);
         if (storeState) { this.store.clear(); for (const [key,value] of Object.entries(structuredClone(storeState))) this.store.set(key,value); }
         await this.web.restoreProfiles(baseline);
+        this.dataAliases=new Set(dataAliases);
+        if(generatorState && this.dataGen?.isSeeded())this.dataGen.restore(generatorState);
       }
       const started = Date.now();
       this.broadcast('SCENARIO_ATTEMPT', { fileName: this.currentFileName, scenario: scenario.name, attempt: this.attempt });
       const errorIndex = this.web.pageErrors?.length || 0;
-      const completed = await this.runScenario(structuredClone(scenario), declarations);
-      const browserErrors = this.web.pageErrors?.slice(errorIndex) || [];
-      const passed = completed && (this.config.browserErrors === 'record' || !browserErrors.length);
+      if (scenario.steps.some(step => step.action === 'native' && step.payload.pluginMethod.toLowerCase() === 'cleanup.register')) {
+        this.activeCleanup = new ScenarioCleanup(this.config.baseUrl);
+        this.cleanupReport = undefined;
+      }
+      let completed = false;
+      let cleanupFailed = false;
+      try {
+        completed = await this.runScenario(structuredClone(scenario), declarations);
+      } finally {
+        await this.native.applicationEvents.dispose();
+        cleanupFailed = await this.finishScenarioCleanup();
+        this.activeCleanup = undefined;
+        this.cleanupReport = undefined;
+      }
+      if (cleanupFailed && this.config.bail && !this.bailTriggered) {
+        this.bailTriggered = true;
+        this.broadcast('BAIL', { fileName: this.currentFileName });
+      }
+      const browserErrors = this.web.pageErrors?.slice(errorIndex).filter(Boolean) || [];
+      const passed = completed && !cleanupFailed && (this.config.browserErrors === 'record' || !browserErrors.length);
       if (this.config.browserErrors !== 'record') for (const message of browserErrors) {
         const error = runtimeFailure('browser.pageError',{},new Error(message),{file:this.currentFileName,profile:this.web.activeProfile || 'default'});
         this.emitLog('ERROR','error',error,{rawError:error,command:'browser.pageError'},undefined,this.currentFileName);
@@ -684,7 +967,7 @@ export class FlowWorker extends EventEmitter {
       }
       this.broadcast('SCENARIO_RESULT', { fileName: this.currentFileName, scenario: scenario.name, attempt: this.attempt, status: this.isAborted ? 'interrupted' : passed ? 'passed' : 'failed', flaky: passed && this.attempt > 1, browserErrors, duration: Date.now() - started });
       finalPassed = passed && !(this.config.failOnFlaky && this.attempt > 1);
-      if (passed || this.isAborted || this.isDebugHalted) break;
+      if (passed || cleanupFailed || this.isAborted || this.isDebugHalted) break;
       if (this.attempt < this.maxAttempts) this.web.pageErrors?.splice(errorIndex);
     }
     this.attempt = 1; this.maxAttempts = 1;
@@ -696,6 +979,10 @@ export class FlowWorker extends EventEmitter {
     globalDeclarations: DeclarationNode[] = [],
   ) {
     let hasScenarioFailed = false;
+    let hasHardFailure = false;
+    let lastFailedStepId: string | undefined;
+    this.paceMilliseconds = 0;
+    this.currentScenarioName = scenario.name;
     for (const originalStep of scenario.steps) {
       const step = structuredClone(originalStep);
       this.currentAssertion = undefined;
@@ -706,7 +993,9 @@ export class FlowWorker extends EventEmitter {
       let blockDesc = step.blockDescription.substring(blockName.length).trim();
 
       const stepLabel = commandLabel(step.action, step.payload);
-      if (hasScenarioFailed) {
+      const method = step.action === 'native' ? step.payload.pluginMethod.toLowerCase() : '';
+      const isCleanup = method === 'cleanup.register';
+      if (hasHardFailure) {
         const assertion=unexecutedAssertion(step.action,step.payload);
         this.broadcast('STEP_ADD',{id:step.id,type:blockName,description:blockDesc,command:step.action,commandLabel:stepLabel,sourceLine:step.line,status:'not_tested',fileName:this.currentFileName});
         this.broadcast('STEP_UPDATE',{id:step.id,status:'not_tested',assertion,error:null,commandLabel:stepLabel,sourceLine:step.line,fileName:this.currentFileName});
@@ -715,17 +1004,25 @@ export class FlowWorker extends EventEmitter {
 
       let resolutionError: unknown;
       try {
-      blockDesc = this.resolveTextVariables(blockDesc);
-      if (this.dataGen) blockDesc = this.dataGen.resolve(blockDesc);
+      blockDesc = this.resolveTemplateData(blockDesc);
+      if(this.currentDataCase)blockDesc+=` · Case ${this.currentDataCase.index+1}/${this.currentDataCase.total}`;
 
-      step.payload = this.resolveTemplateData(step.payload);
+      if (isCleanup) {
+        const data = cleanupRegistration(step.payload.data);
+        step.payload.data = { ...data, url: resolveCleanupTarget(data.url, component => this.resolveTemplateData(component)) };
+      } else {
+        step.payload = this.resolveStepPayload(step.payload);
+      }
 
       } catch (error) { resolutionError = error; }
       this.commandSecretValues = commandSecrets(step.action,step.payload);
 
       this.currentStepContext = `${blockName} ${blockDesc}`;
 
-      const isOpt = step.payload?.optional;
+      const isOpt = step.payload?.optional && step.payload.soft === undefined;
+      const isSoft = step.payload?.soft === true && !step.payload?.optional && isSoftAssertionStep(step.action, step.payload);
+      this.currentStepId = step.id;
+      this.currentStepLine = step.line;
 
 
 
@@ -762,8 +1059,9 @@ export class FlowWorker extends EventEmitter {
         {
           command: step.action,
           commandLabel: stepLabel,
+          sourceFile: step.sourceFile,
           sourceLine: step.line,
-          payload: step.payload,
+          payload: isCleanup ? undefined : step.payload,
         },
         undefined,
         this.currentFileName,
@@ -775,7 +1073,10 @@ export class FlowWorker extends EventEmitter {
         description: blockDesc,
         command: step.action,
           commandLabel: stepLabel,
+          sourceFile: step.sourceFile,
           sourceLine: step.line,
+        soft: isSoft,
+        userMessage: ['log','pause'].includes(step.action) ? step.payload?.message : undefined,
         status: "running",
         error: null, assertion: null,
         fileName: this.currentFileName,
@@ -784,12 +1085,16 @@ export class FlowWorker extends EventEmitter {
       const stepStarted = Date.now();
       try {
         if (resolutionError) throw resolutionError;
-        await this.executeStep(
-          step.action,
-          step.payload,
-          scenario.declarations,
-          globalDeclarations,
-        );
+        if (isCleanup) {
+          this.activeCleanup!.register(step, step.payload.data, this.api.snapshotHeaders());
+        } else if (method !== 'skipif') {
+          await this.executeStep(
+            step.action,
+            step.payload,
+            scenario.declarations,
+            globalDeclarations,
+          );
+        }
 
         const stepContext = await this.captureStepContext(step.payload);
         const domSnapshot = await this.native.captureDOM(step.id).catch(() => undefined);
@@ -908,7 +1213,7 @@ export class FlowWorker extends EventEmitter {
           spinner.fail();
         }
 
-        const humanReadableError = assertion ? assertionText(assertion) : runtimeFailure(stepLabel,step.payload,e,{file:this.currentFileName,line:step.line,profile:this.web.activeProfile || "default",timeout:this.config.timeout,elapsed:Date.now()-stepStarted});
+        const humanReadableError = assertion ? assertionText(assertion) : runtimeFailure(stepLabel,isCleanup ? {} : step.payload,e,{file:step.sourceFile || this.currentFileName,line:step.line,profile:this.web.activeProfile || "default",timeout:this.config.timeout,elapsed:Date.now()-stepStarted});
         this.printAssertion(assertion);
         if (!this.isSilent && !assertion) console.error('      '+redactText(String(humanReadableError),this.secretValues()).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g,''));
 
@@ -922,6 +1227,7 @@ export class FlowWorker extends EventEmitter {
             assertion,
             command: step.action,
           commandLabel: stepLabel,
+          sourceFile: step.sourceFile,
           sourceLine: step.line,
             screenshot: stepContext.screenshot,
             boundingBox: stepContext.boundingBox,
@@ -941,11 +1247,18 @@ export class FlowWorker extends EventEmitter {
           fileName: this.currentFileName,
         });
         hasScenarioFailed = true;
-        if (this.config.bail && this.attempt >= this.maxAttempts && !this.bailTriggered) {
+        lastFailedStepId = step.id;
+        if (!isSoft) hasHardFailure = true;
+        if (!isSoft && this.config.bail && this.attempt >= this.maxAttempts && !this.bailTriggered) {
           this.bailTriggered = true;
           this.broadcast('BAIL', { fileName: this.currentFileName, id: step.id });
         }
       }
+    }
+    // Soft checks complete the scenario before --bail can stop subsequent scenarios/files.
+    if (hasScenarioFailed && this.config.bail && this.attempt >= this.maxAttempts && !this.bailTriggered) {
+      this.bailTriggered = true;
+      this.broadcast('BAIL', { fileName: this.currentFileName, id: lastFailedStepId });
     }
     return !hasScenarioFailed;
   }
@@ -1009,6 +1322,12 @@ export class FlowWorker extends EventEmitter {
     localDeclarations: DeclarationNode[] = [],
     globalDeclarations: DeclarationNode[] = [],
   ) {
+    if (payload?.soft !== undefined && (payload.soft !== true || payload.optional || !isSoftAssertionStep(action, payload))) {
+      throw new Error('flow.soft requires a supported built-in assertion and cannot be combined with flow.try.');
+    }
+    if (this.paceMilliseconds && ['open','click','forceClick','type','forceType','passcode','upload','set','select','drag','switchTo','close','acceptDialog','rejectDialog','check','uncheck','hover','injectAudio','press','clear','focus','blur','doubleClick','rightClick','goBack','goForward','reload','scroll'].includes(action) || this.paceMilliseconds && action === 'native' && ['input.type','tab.use','tab.close','frame.use','frame.main','files.select'].includes(payload?.pluginMethod)) {
+      await this.control.delay(this.paceMilliseconds);
+    }
     if (payload && payload.selector === "smart-burger-fallback") {
       payload.selector = [
         'button[aria-label*="menu" i]',
@@ -1025,11 +1344,48 @@ export class FlowWorker extends EventEmitter {
     if (action === 'expect') validateExpectationType(payload?.type);
 
     switch (action) {
+      case 'press': case 'clear': case 'focus': case 'blur': case 'doubleClick': case 'rightClick': case 'goBack': case 'goForward': case 'reload':
+        await this.native.interactions.simple(action, payload);
+        break;
+      case 'scroll':
+        await this.native.interactions.scroll(payload.data);
+        break;
+
+      case 'wait':
+        await this.control.delay(validateControlDuration(payload?.milliseconds, 'wait')!);
+        break;
+      case 'pace':
+        this.paceMilliseconds = validateControlDuration(payload?.milliseconds, 'pace')!;
+        break;
+      case 'log': {
+        validateControlMessage(payload?.message, 'log');
+        const message = redactText(payload.message, this.secretValues());
+        // Prevent a user message from forging terminal statuses or injecting ANSI commands.
+        const terminalMessage = message.replace(/[\x00-\x1f\x7f-\x9f]/g, character => '\\u' + character.charCodeAt(0).toString(16).padStart(4, '0'));
+        if (!this.isSilent) console.log('      [Log]: ' + terminalMessage);
+        this.emitLog('CONSOLE', 'info', message, { userLog: true, stepId: this.currentStepId, scenario: this.currentScenarioName, sourceLine: this.currentStepLine });
+        break;
+      }
+      case 'pause': {
+        if (this.config.ci || isCIEnvironment()) throw new Error('flow.pause requires the interactive Flowstride dashboard and cannot run in CI. Remove the pause before running unattended tests.');
+        validateControlMessage(payload?.message, 'pause');
+        await this.control.pause(payload.message, { fileName: this.currentFileName.slice(0,4096), scenario: this.currentScenarioName.slice(0,4096), stepId: this.currentStepId.slice(0,4096), sourceLine: this.currentStepLine, attempt: this.attempt, profile: (this.web.activeProfile || 'default').slice(0,4096) });
+        break;
+      }
       case 'native': {
         const timeout = nativeStepTimeout(payload.pluginMethod, payload.data, this.config.timeout);
         let result: unknown;
         try {
-          result = await withDeadline(this.native.execute(payload.pluginMethod, payload.data), timeout);
+          if (payload.pluginMethod.startsWith('api.')) {
+            this.native.lastAssertion = undefined;
+            await this.api.executeNative(payload.pluginMethod.slice(4), payload.data, assertion => {
+              this.native.lastAssertion = assertion;
+            });
+          } else if (/^(?:console|channel)\.expect$/.test(payload.pluginMethod)) {
+            result = await this.native.execute(payload.pluginMethod, payload.data);
+          } else if(/^(?:data|file)\./.test(payload.pluginMethod)){
+            this.native.lastAssertion=undefined;result=await withDeadline(this.executeDataStep(payload.pluginMethod,payload.data),timeout);
+          }else result = await withDeadline(this.native.execute(payload.pluginMethod, payload.data), timeout);
           this.currentAssertion = this.native.lastAssertion;
         } catch (error: any) {
           const fallback = unexecutedAssertion('native',payload,'The assertion could not execute.');
@@ -1041,6 +1397,33 @@ export class FlowWorker extends EventEmitter {
         break;
       }
       case "extract":
+        if (payload.target === 'property' || payload.target === 'network') {
+          if (typeof payload.variableName !== 'string' || !/^[A-Za-z_]\w{0,127}$/.test(payload.variableName) || ['__proto__','constructor','prototype'].includes(payload.variableName)) throw new Error('Extraction requires a safe variable name of 1–128 characters.');
+          let value: unknown, sensitive = false;
+          if (payload.target === 'network') {
+            value = this.native.events.extractNetwork(payload.captureName, payload.jsonPath);
+            sensitive = /password|passcode|token|secret|authorization|cookie|api.?key|otp/i.test(payload.jsonPath);
+          } else {
+            let locator: Awaited<ReturnType<WebAdapter['resolvePropertyTarget']>> | undefined;
+            let observed = 'Target not found';
+            try {
+              await poll(async () => {
+                if (this.isAborted) return true;
+                try { locator = await this.web.resolvePropertyTarget(payload.selector, payload.elementType, payload.readableTarget); }
+                catch (error) { observed = String(error instanceof Error ? error.message : error); throw error; }
+                const count = await locator.count(); observed = `${count} matching target(s)`;
+                return count === 1;
+              },this.config.timeout || 30000,'property extraction target');
+            } catch (error) { throw new Error(`Property extraction requires exactly one target: ${observed}. Narrow the readable target with a qualifier, spatial relationship, or explicit selector.`,{cause:error}); }
+            if (this.isAborted) throw new Error('Property extraction cancelled.');
+            value = await readBrowserProperty(locator!, payload.property);
+            sensitive = /password|passcode|token|secret|authorization|cookie|api.?key|otp/i.test(payload.property);
+            sensitive ||= await locator!.evaluate(element => /password|passcode|token|secret|authorization|cookie|api.?key|one-time-code|otp/i.test(['type','name','id','autocomplete'].map(key => element.getAttribute(key) || '').join(' ')));
+          }
+          this.trackExtractionSecrets(value,sensitive,!!payload.isGlobal);
+          Object.defineProperty(payload.isGlobal ? FlowWorker.globalVariables : this.localVariables,payload.variableName,{value:dataSnapshot(value),enumerable:true,writable:true,configurable:true});
+          break;
+        }
         if (["resBody", "resHeader", "cookie"].includes(payload.target)) {
           this.processExtractions([
             {
@@ -1186,7 +1569,7 @@ export class FlowWorker extends EventEmitter {
           const stateToSave = await this.web.getState();
           let apiCookies: any[] = [];
           try {
-            const apiState = this.api.getState();
+            const apiState = this.api.getLegacySessionState ? this.api.getLegacySessionState() : this.api.getState();
             if (
               apiState &&
               apiState.headers &&
@@ -1741,6 +2124,7 @@ export class FlowWorker extends EventEmitter {
 
   public async shutdown(): Promise<void> {
     clearInterval(this.fallbackStream);
+    await this.finishScenarioCleanup();
     await this.native.dispose();
     try {
       await this.web.shutdown();

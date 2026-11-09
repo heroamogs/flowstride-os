@@ -338,6 +338,8 @@ program
   .option('--ci', 'Run without a dashboard and write CI reports')
   .option('--device <profile>', 'desktop, phone, or landscape')
   .option('--browser <engine>', 'chromium, firefox, or webkit')
+  .option('--tag <name>', 'Select scenarios with this tag (repeat for any match)',
+    (tag: string, previous: string[] = []) => [...previous, tag], undefined)
   .option('--shard <index/total>', 'Run one deterministic CI shard, e.g. 1/4')
   .option('--shard-history <file>', 'Use merged timing history for shard balancing')
   .option('--update-baselines', 'Explicitly update ARIA baselines locally')
@@ -551,7 +553,7 @@ program.command('ci')
 program.command('merge <summaries...>')
   .description('Merge complete native shard results and evidence')
   .option('--output <directory>', 'New project directory for merged results', 'flowstride-merged')
-  .action((summaries: string[], options: { output: string }) => { const result = mergeResults(summaries, options.output); console.log(`Merged Flowstride result: ${result.status}`); process.exitCode = result.status === 'passed' ? 0 : 1; });
+  .action((summaries: string[], options: { output: string }) => { const result = mergeResults(summaries, options.output); console.log(`Merged Flowstride result: ${result.status}`); process.exitCode = ['passed', 'skipped'].includes(result.status) ? 0 : 1; });
 program.command('trace <file>')
   .description('Open a local Playwright trace without uploading it')
   .action((file: string) => { const { execFileSync } = require('node:child_process'); const local = projectPath(process.cwd(), file); execFileSync(process.execPath, [path.join(path.dirname(require.resolve('playwright/package.json')), 'cli.js'), 'show-trace', local], { stdio: 'inherit' }); });

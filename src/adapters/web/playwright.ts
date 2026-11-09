@@ -1,3 +1,5 @@
+import { settleUserAgentOverride } from './plugin_lifecycle';
+import { readableTargetSchema, type ReadableTarget } from '../../native/targeting';
 import { evidenceDirectory, protectEvidenceTree } from '../../security/evidence';
 import { evidencePath, validateContextOptions, name as nativeName } from '../../native/validation';
 import { chromium as pinnedChromium, firefox, webkit } from 'playwright';
@@ -32,8 +34,8 @@ export class WebAdapter {
     if (this.config.har) settings.recordHar = { path: evidencePath(this.config, `${key}-${Date.now()}.har`), content: 'embed', mode: 'full' };
     const context = await this.browser.newContext(settings);
     context.setDefaultTimeout(this.config.timeout);
-    context.on('page', page => page.on('pageerror', error => this.pageErrors.push(error.message)));
-    context.on('dialog', async dialog => { if (this.dialogHandler) await this.dialogHandler(dialog); else if (this.config.defaultDialogBehavior === 'accept') await dialog.accept().catch(() => {}); else await dialog.dismiss().catch(() => {}); });
+    context.on('page', page => page.on('pageerror', error => this.recordPageError(error)));
+    context.on('dialog', async dialog => { if (await this.nativeDialogObserver?.(dialog)) return; if (this.dialogHandler) await this.dialogHandler(dialog); else if (this.config.defaultDialogBehavior === 'accept') await dialog.accept().catch(() => {}); else await dialog.dismiss().catch(() => {}); });
     try {
       const page = await context.newPage();
       this.profiles.set(key, { context, page, options: settings, tracing: false });
@@ -58,7 +60,7 @@ export class WebAdapter {
     const profile = this.profiles.get(profileName);
     if (!profile) throw new Error(`Unknown profile: ${profileName}`);
     await this.finishProfile(profileName);
-    this.profiles.delete(profileName);
+    this.profiles.delete(profileName); this.namedPages.delete(profileName);
     if (this.activeProfile === profileName) await this.useProfile('default');
   }
 
@@ -94,7 +96,7 @@ export class WebAdapter {
     const current = this.profiles.get(this.activeProfile); if (current && this.page) current.page = this.page;
     for (const [key, profile] of this.profiles) {
       const pages = [];
-      for (const page of profile.context.pages()) pages.push({ url:page.url(), active:page === profile.page,
+      for (const page of profile.context.pages()) pages.push({ url:page.url(), active:page === profile.page, names:[...(this.namedPages.get(key) || [])].filter(([,named])=>named===page).map(([alias])=>alias), framePath:this.frameScopes.get(page)?.path || [],
         sessionStorage:await page.evaluate(() => ({ ...window.sessionStorage })).catch(() => ({})) });
       result.profiles.push({ key, options:profile.options, storageState:await profile.context.storageState({ indexedDB:true }), pages });
     }
@@ -103,13 +105,14 @@ export class WebAdapter {
   public async restoreProfiles(snapshot: any): Promise<void> {
     await this.clearSessionStorageRestore();
     for (const [key] of this.profiles) await this.finishProfile(key, evidencePath(this.config, `${key}-${Date.now()}-attempt.webm`));
-    this.profiles.clear(); this.dialogHandler = snapshot.dialogHandler;
+    this.profiles.clear(); this.namedPages.clear(); this.frameScopes = new WeakMap(); this.dialogHandler = snapshot.dialogHandler;
+    const pendingScopes: {profile:string;page:Page;path:any[]}[] = [];
     for (const saved of snapshot.profiles) {
       const context = await this.browser!.newContext({ ...saved.options, storageState:saved.storageState,
         ...(this.config.har ? { recordHar:{ path:evidencePath(this.config, `${saved.key}-${Date.now()}-retry.har`), content:'embed' } } : {}) });
       context.setDefaultTimeout(this.config.timeout);
-      context.on('page', page => page.on('pageerror', error => this.pageErrors.push(error.message)));
-      context.on('dialog', async dialog => { if (this.dialogHandler) await this.dialogHandler(dialog); else if (this.config.defaultDialogBehavior === 'accept') await dialog.accept().catch(() => {}); else await dialog.dismiss().catch(() => {}); });
+      context.on('page', page => page.on('pageerror', error => this.recordPageError(error)));
+      context.on('dialog', async dialog => { if (await this.nativeDialogObserver?.(dialog)) return; if (this.dialogHandler) await this.dialogHandler(dialog); else if (this.config.defaultDialogBehavior === 'accept') await dialog.accept().catch(() => {}); else await dialog.dismiss().catch(() => {}); });
       let selected: Page | undefined;
       for (const tab of saved.pages) {
         const page = await context.newPage(); if (tab.active || !selected) selected = page;
@@ -118,15 +121,39 @@ export class WebAdapter {
           const seed = await page.addInitScript(({ origin, values }) => { if (window === window.top && location.origin === origin) for (const [key,value] of Object.entries(values)) sessionStorage.setItem(key,String(value)); }, { origin,values:tab.sessionStorage });
           try { await page.goto(tab.url,{waitUntil:'domcontentloaded'}); } finally { await seed.dispose(); }
         }
+        if (tab.names?.length) { let aliases = this.namedPages.get(saved.key); if (!aliases) this.namedPages.set(saved.key,aliases = new Map()); for (const alias of tab.names) aliases.set(alias,page); }
+        if (tab.framePath?.length) pendingScopes.push({profile:saved.key,page,path:tab.framePath});
       }
       selected ||= await context.newPage();
       this.profiles.set(saved.key,{ context,page:selected,options:saved.options,tracing:false });
       if (this.config.trace) await this.beginTrace(saved.key);
     }
     this.context = null; this.page = null;
+    for (const entry of pendingScopes) {
+      this.activeProfile = entry.profile; this.context = entry.page.context(); this.page = entry.page;
+      for (const selection of entry.path) await this.useFrameScope(selection);
+    }
+    this.context = null; this.page = null;
     await this.useProfile(snapshot.active);
   }
   public pageErrors: string[] = [];
+  private pageErrorOccurrences = new WeakMap<Error, { list: string[]; index: number; message: string }>();
+
+  private recordPageError(error: Error) {
+    const list = this.pageErrors;
+    const message = error.message || 'The browser raised an uncaught error without a message.';
+    this.pageErrorOccurrences.set(error, { list, index: list.length, message });
+    list.push(message);
+  }
+
+  public claimPageError(error: Error): boolean {
+    const record = this.pageErrorOccurrences.get(error);
+    if (!record || record.list !== this.pageErrors || record.list[record.index] !== record.message) return false;
+    // Keep the attempt's starting index stable; the worker filters this claimed slot.
+    record.list[record.index] = '';
+    this.pageErrorOccurrences.delete(error);
+    return true;
+  }
 
   private browser: Browser | null = null;
 
@@ -157,6 +184,82 @@ export class WebAdapter {
     if (!this.page) throw new Error("Browser not initialised");
 
     return this.page;
+  }
+
+
+  private namedPages = new Map<string, Map<string, Page>>();
+  private frameScopes = new WeakMap<Page, { frame: Frame; path: any[] }>();
+  public nativeDialogObserver?: (dialog: Dialog) => Promise<boolean>;
+
+  /** Explicit frame scope never falls back to a parent, sibling or top-level document. */
+  public getScope(): Page | Frame {
+    const page = this.getPage(), scope = this.frameScopes.get(page);
+    if (scope && page.isClosed()) throw new Error('The active tab is closed. Select an open tab before interacting.');
+    if (scope?.frame.isDetached()) throw new Error('The selected iframe detached or its page navigated. Select it again from flow.frame.main {}.');
+    return scope?.frame || page;
+  }
+  public hasFrameScope(): boolean { return this.frameScopes.has(this.getPage()); }
+  public mainFrameScope(): void { this.frameScopes.delete(this.getPage()); }
+  public async useFrameScope(data: {target?: ReadableTarget; selector?: string; timeout?: number}, check: () => void = () => {}): Promise<void> {
+    const page = this.getPage(), scope = this.getScope(), duration = data.timeout ?? this.config.timeout ?? 30000, deadline = Date.now() + duration;
+    const label = data.target !== undefined ? JSON.stringify(data.target) : `selector ${JSON.stringify(data.selector)}`;
+    for (;;) {
+      check();
+      if (this.getPage() !== page || this.getScope() !== scope) throw new Error('The active page or frame changed during iframe selection.');
+      const left = deadline - Date.now();
+      if (left <= 0) throw new Error(`Iframe not found: ${label}; 0 visible matching frames after ${duration} ms. Use its title/accessible name, spatial scope, or an explicit selector.`);
+      const target = data.target === undefined ? undefined : typeof data.target === 'string' ? {text:data.target,element:'iframe' as const} : {...data.target,element:data.target.element || 'iframe' as const};
+      const locator = (target ? await this.resolveAssertionTarget(target, undefined, true, scope) : scope.locator(data.selector!)).and(scope.locator('iframe,frame')).filter({visible:true});
+      const count = await locator.count();
+      if (count > 1) throw new Error(`Ambiguous iframe ${label}: ${count} visible matches. Narrow its readable/spatial target or selector.`);
+      if (count === 1) {
+        const handle = await locator.elementHandle({timeout:Math.max(1,deadline-Date.now())});
+        try {
+          const frame = await handle?.contentFrame();
+          check();
+          if (Date.now() >= deadline) throw new Error(`Iframe selection timed out after ${duration} ms: ${label}.`);
+          if (this.getPage() !== page || this.getScope() !== scope) throw new Error('The active page or frame changed during iframe selection.');
+          if (frame && !frame.isDetached()) {
+            this.frameScopes.set(page,{frame,path:[...(this.frameScopes.get(page)?.path || []),{...data}]}); return;
+          }
+        } finally { await handle?.dispose(); }
+      }
+      await new Promise(resolve => setTimeout(resolve,Math.min(40,Math.max(1,deadline-Date.now()))));
+    }
+  }
+  public hasNamedPage(alias: string): boolean { return this.namedPages.get(this.activeProfile)?.has(alias) || false; }
+  public namePage(alias: string, page: Page): void {
+    nativeName.parse(alias);
+    if (page.isClosed() || page.context() !== this.getContext()) throw new Error(`Tab "${alias}" is closed or belongs to a different browser profile.`);
+    let pages = this.namedPages.get(this.activeProfile);
+    if (!pages) this.namedPages.set(this.activeProfile,pages = new Map());
+    if (pages.has(alias)) throw new Error(`Tab name already exists: ${alias}. Close it or choose a different name.`);
+    pages.set(alias,page);
+  }
+  public async usePage(page: Page): Promise<void> {
+    if (page.isClosed() || page.context() !== this.getContext()) throw new Error('Cannot switch to a closed tab or a tab from another browser profile.');
+    this.page = page;
+    const profile = this.profiles.get(this.activeProfile); if (profile) profile.page = page;
+    await page.bringToFront();
+    await page.waitForLoadState('domcontentloaded',{timeout:this.config.timeout});
+    await this.onPageChanged?.();
+  }
+  public async useNamedPage(alias: string): Promise<void> {
+    const page = this.namedPages.get(this.activeProfile)?.get(alias);
+    if (!page) throw new Error(`Unknown tab "${alias}" in browser profile "${this.activeProfile}". Name the current tab or arm and capture a popup first.`);
+    if (page.isClosed()) throw new Error(`Named tab "${alias}" is closed. Capture a new tab under a new name.`);
+    await this.usePage(page);
+  }
+  public async closeNamedPage(alias: string): Promise<void> {
+    const names = this.namedPages.get(this.activeProfile), page = names?.get(alias);
+    if (!page) throw new Error(`Unknown tab "${alias}" in browser profile "${this.activeProfile}".`);
+    if (page.isClosed()) { names!.delete(alias); throw new Error(`Named tab "${alias}" was already closed.`); }
+    const remaining = this.getContext().pages().filter(other => other !== page && !other.isClosed());
+    if (!remaining.length) throw new Error('Cannot close the last tab in a browser profile. Keep one tab available until file completion.');
+    const opener = await page.opener(), next = opener && remaining.includes(opener) ? opener : remaining[0], active = page === this.getPage();
+    await this.clearSessionStorageRestore(page); await page.close(); this.frameScopes.delete(page);
+    for (const [key,value] of names!) if (value === page) names!.delete(key);
+    if (active) await this.usePage(next);
   }
 
   public getBrowserInfo() {
@@ -199,13 +302,15 @@ export class WebAdapter {
       engine = configuredChromium;
     }
     if (audioInjectionPath && this.config.browser && this.config.browser !== 'chromium') throw new Error('Audio file injection requires Chromium.');
-    this.profiles.clear(); this.activeProfile = 'default'; this.discoveredPages = []; this.dialogHandler = null;
+    this.profiles.clear(); this.namedPages.clear(); this.frameScopes = new WeakMap(); this.activeProfile = 'default'; this.discoveredPages = []; this.dialogHandler = null;
     this.browser = await engine.launch({
       headless: this.config.headless,
       // Native CI finalizes videos before closing the browser on cancellation.
       ...(this.config.ci ? { handleSIGINT: false, handleSIGTERM: false } : {}),
       args: !this.config.browser || this.config.browser === 'chromium' ? launchArgs : [],
     });
+
+    settleUserAgentOverride((engine as any).plugins?.list.find((plugin: any) => plugin.name === 'stealth/evasions/user-agent-override'));
 
     if (this.browser.browserType().name() !== (this.config.browser || 'chromium')) {
       await this.browser.close();
@@ -231,9 +336,10 @@ export class WebAdapter {
     this.context = await this.browser.newContext({ ...this.contextOptions,
       ...(this.config.har ? { recordHar: { path: evidencePath(this.config, `default-${Date.now()}.har`), content: 'embed' as const, mode: 'full' as const } } : {}) });
     this.pageErrors = [];
-    this.context.on('page', page => page.on('pageerror', error => this.pageErrors.push(error.message)));
+    this.context.on('page', page => page.on('pageerror', error => this.recordPageError(error)));
 
     this.context.on("dialog", async (dialog) => {
+      if (await this.nativeDialogObserver?.(dialog)) return;
       if (this.dialogHandler) {
         await this.dialogHandler(dialog);
       } else {
@@ -619,7 +725,7 @@ export class WebAdapter {
   public async close(targetText: string): Promise<void> {
     const cleanText = targetText.replace(/^['"]|['"]$/g, "");
 
-    const textLoc = this.page!.locator(
+    const textLoc = this.getScope().locator(
       `:text-is("${cleanText}"), :has-text("${cleanText}")`,
     )
 
@@ -710,6 +816,22 @@ export class WebAdapter {
 
       return { x: box.right - 20, y: box.top + 20 };
     });
+
+    if (this.hasFrameScope()) {
+      // Geometry above is in the selected document. Playwright translates an
+      // element-relative click through nested/cross-origin frame offsets.
+      const hit = await this.getScope().evaluateHandle(({x,y}) => document.elementFromPoint(x,y),clickCoords);
+      try {
+        const element = hit.asElement();
+        if (!element) throw new Error('Geometric Close Error: The close point is outside the selected iframe viewport. Scroll the modal into view.');
+        const position = await element.evaluate((node,point) => {
+          const box = node.getBoundingClientRect();
+          return {x:point.x-box.left-(node.clientLeft || 0),y:point.y-box.top-(node.clientTop || 0)};
+        },clickCoords);
+        await element.click({position});
+      } finally { await hit.dispose(); }
+      await this.page!.waitForTimeout(300); return;
+    }
 
     await this.page!.mouse.move(clickCoords.x, clickCoords.y);
 
@@ -854,14 +976,14 @@ export class WebAdapter {
     }
 
     if (count === 0) {
-      inputs = this.page!.locator(
+      inputs = this.getScope().locator(
         'input[maxlength="1"], input[inputmode="numeric"], input[autocomplete="one-time-code"]',
       );
 
       count = await inputs.count();
 
       if (count > 8) {
-        inputs = this.page!.locator(
+        inputs = this.getScope().locator(
           'form input[maxlength="1"], [role="dialog"] input[maxlength="1"]',
         );
 
@@ -1127,12 +1249,12 @@ export class WebAdapter {
 
     const dateLabelPart = `${month} ${day}`;
 
-    const accessibleCellLocator = this.page!.locator(
+    const accessibleCellLocator = this.getScope().locator(
       `[role="gridcell"][aria-label*="${dateLabelPart}"][aria-label*="${year}"], ` +
         `[role="button"][aria-label*="${dateLabelPart}"][aria-label*="${year}"]`,
     ).filter({ visible: true });
 
-    const rawClassLocator = this.page!.locator(
+    const rawClassLocator = this.getScope().locator(
       `.react-datepicker__day--0${day.toString().padStart(2, "0")}, ` +
         `.day:has-text("${day}")`,
     ).filter({ visible: true });
@@ -1193,7 +1315,7 @@ export class WebAdapter {
 
     await this.page!.waitForTimeout(300);
 
-    const activeElement = await this.page!.evaluateHandle(
+    const activeElement = await this.getScope().evaluateHandle(
       () => document.activeElement,
     );
 
@@ -1210,7 +1332,7 @@ export class WebAdapter {
     const dropdownClasses =
       '.select__menu, .MuiPopover-root, [role="listbox"], [role="menu"], .dropdown-menu';
 
-    const portalContainer = this.page!.locator(dropdownClasses)
+    const portalContainer = this.getScope().locator(dropdownClasses)
 
       .filter({ visible: true })
 
@@ -1228,14 +1350,14 @@ export class WebAdapter {
       optionLoc = portalContainer.locator(optionSelector).first();
 
       if ((await optionLoc.count()) === 0) {
-        optionLoc = this.page!.locator(optionSelector)
+        optionLoc = this.getScope().locator(optionSelector)
 
           .filter({ visible: true })
 
           .first();
       }
     } else {
-      optionLoc = this.page!.locator(optionSelector)
+      optionLoc = this.getScope().locator(optionSelector)
 
         .filter({ visible: true })
 
@@ -1358,7 +1480,7 @@ export class WebAdapter {
       const dstEl = await destLoc.elementHandle();
 
       if (srcEl && dstEl) {
-        await this.page!.evaluate(
+        await this.getScope().evaluate(
           ([s, d]) => {
             const actualSrc =
               ((s as HTMLElement).closest(
@@ -1438,7 +1560,7 @@ export class WebAdapter {
       cleanSelector.toLowerCase() === "verify you are human" ||
       cleanSelector.toLowerCase() === "cloudflare"
     ) {
-      const cfWrapper = this.page!.locator(
+      const cfWrapper = this.getScope().locator(
         'iframe[src*="challenges.cloudflare.com"], iframe[title*="Widget containing a Cloudflare security challenge"]',
       ).first();
 
@@ -1544,7 +1666,7 @@ export class WebAdapter {
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeout) {
-      const bodyText = await this.page!.locator("body")
+      const bodyText = await this.getScope().locator("body")
 
         .innerText()
 
@@ -1708,8 +1830,11 @@ export class WebAdapter {
     allowStaticText: boolean = false,
 
     fuzzy: boolean = false,
+    literal: boolean = false,
   ): string {
-    const cleanText = targetText.replace(/^['"]|['"]$/g, "");
+    const cleanText = literal
+      ? targetText.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\n\r\f]/g, character => '\\' + character.charCodeAt(0).toString(16) + ' ')
+      : targetText.replace(/^['"]|['"]$/g, '');
 
     const textMatch = fuzzy
       ? `:text("${cleanText}")`
@@ -1719,6 +1844,7 @@ export class WebAdapter {
       ? `select:has(option:text("${cleanText}"))`
       : `select:has(option:text-is("${cleanText}"))`;
 
+    if (elementType === 'iframe') return `:is(iframe,frame):is([title="${cleanText}" i],[aria-label="${cleanText}" i],[name="${cleanText}" i])`;
     if (elementType) {
       switch (elementType) {
         case "button":
@@ -1775,7 +1901,7 @@ export class WebAdapter {
     const processingSelector = translatedRaw || rawSelector;
 
     if (this.isRawCssSelector(processingSelector.trim())) {
-      let loc = this.page!.locator(processingSelector);
+      let loc = this.getScope().locator(processingSelector);
 
       if (!isForceAction) loc = loc.filter({ visible: true });
 
@@ -1847,7 +1973,7 @@ export class WebAdapter {
         ? finalAnchorClean
         : this.buildHeuristicSelector(finalAnchorClean, undefined, true, fuzzy);
 
-      const anchorLoc = this.page!.locator(anchorSelector).first();
+      const anchorLoc = this.getScope().locator(anchorSelector).first();
 
       try {
         if ((await anchorLoc.count()) > 0) {
@@ -1894,10 +2020,10 @@ export class WebAdapter {
       }
     }
 
-    let loc = this.page!.locator(finalSelector);
+    let loc = this.getScope().locator(finalSelector);
 
     if (alternativeSelector) {
-      loc = loc.or(this.page!.locator(alternativeSelector));
+      loc = loc.or(this.getScope().locator(alternativeSelector));
     }
 
     let targetLoc = isForceAction ? loc : loc.filter({ visible: true });
@@ -1933,16 +2059,16 @@ export class WebAdapter {
         let foundInFrame = false;
 
         while (Date.now() - startTime < timeout) {
-          await this.page!.evaluate(() => window.scrollBy(0, 400)).catch(
+          await this.getScope().evaluate(() => window.scrollBy(0, 400)).catch(
             () => {},
           );
 
           await this.page!.waitForTimeout(150);
 
-          loc = this.page!.locator(finalSelector);
+          loc = this.getScope().locator(finalSelector);
 
           if (alternativeSelector) {
-            loc = loc.or(this.page!.locator(alternativeSelector));
+            loc = loc.or(this.getScope().locator(alternativeSelector));
           }
 
           targetLoc = isForceAction ? loc : loc.filter({ visible: true });
@@ -1959,7 +2085,7 @@ export class WebAdapter {
             break;
           }
 
-          const frames = this.page!.frames();
+          const frames = this.hasFrameScope() ? [] : this.page!.frames();
 
           for (const frame of frames) {
             if (frame === this.page!.mainFrame()) continue;
@@ -1996,6 +2122,93 @@ export class WebAdapter {
     if (arrayIndex !== null) return targetLoc.nth(arrayIndex);
 
     return targetLoc;
+  }
+
+  /** A read-only view of the normal DSL resolver, including hidden elements. */
+  public async resolvePropertyTarget(selector: string, elementType?: string, readableTarget?: ReadableTarget): Promise<Locator> {
+    const text = typeof readableTarget === 'string' ? readableTarget : readableTarget?.text;
+    if (text !== undefined && !this.translateCoordinateSelector(text) && !this.isRawCssSelector(text.trim())) return this.resolveAssertionTarget(readableTarget!);
+    return this.getLocator(selector, elementType, true, true);
+  }
+
+  /** New interactions preserve literal readable targets and explicit CSS/coordinate fallbacks. */
+  public async resolveInteractionTarget(selector: string, elementType?: string, readableTarget?: ReadableTarget): Promise<Locator> {
+    const text = typeof readableTarget === 'string' ? readableTarget : readableTarget?.text;
+    const translated = this.translateCoordinateSelector(text ?? selector);
+    if (readableTarget) {
+      const readable = await this.resolveAssertionTarget(readableTarget, undefined, true);
+      if (await readable.count() > 0 || !translated && !this.isRawCssSelector((text ?? selector).trim())) return readable;
+    }
+    const css = translated || selector, page = this.getPage(), main = this.getScope().locator(css);
+    if (this.hasFrameScope() || await main.filter({visible:true}).count()) return main;
+    const matches: Locator[] = [];
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue;
+      try { const candidate = frame.locator(css); if (await candidate.filter({visible:true}).count()) matches.push(candidate); }
+      catch (error) { if (!/detached/i.test(String(error))) throw error; }
+    }
+    if (matches.length > 1) throw new Error('Interaction target matched in multiple frames. Narrow the target or its selector.');
+    return matches[0] || main;
+  }
+
+  /** Readable assertion targets share the normal heuristic compiler, without action waits or first(). */
+  public async resolveAssertionTarget(input: ReadableTarget, frameSelector?: string, visibleOnly = false, explicitScope?: Page | Frame): Promise<Locator> {
+    const parsed = readableTargetSchema.parse(input);
+    const target: Exclude<ReadableTarget, string> = typeof parsed === 'string' ? { text: parsed } : parsed;
+    const direction = (['near','above','under','below','leftOf','rightOf'] as const).find(key => target[key] !== undefined);
+    type Scope = Page | Frame | import('playwright').FrameLocator | Locator;
+    const readable = (scope: Scope, text: string, element?: string): Locator => {
+      let result = scope.locator(this.buildHeuristicSelector(text, element, true, false, true));
+      if (element === 'input' || element === 'field') {
+        result = result.or(scope.getByLabel(text, { exact: true }).and(scope.locator('input,textarea')));
+      } else if (element && ['table','tr','th','td','iframe'].includes(element)) {
+        result = result.and(scope.locator(element === 'iframe' ? 'iframe,frame' : element));
+      }
+      return result;
+    };
+    const resolve = async (scope: Scope): Promise<Locator> => {
+      let container: Scope = scope;
+      if (target.inside !== undefined) {
+        const semantic = scope.getByRole('form', { name: target.inside, exact: true })
+          .or(scope.getByRole('group', { name: target.inside, exact: true }))
+          .or(scope.getByRole('dialog', { name: target.inside, exact: true }));
+        const semanticScope = visibleOnly ? semantic.filter({visible:true}) : semantic;
+        const ordinaryScope = readable(scope, target.inside);
+        const anchor = await semanticScope.count() > 0 ? semanticScope : visibleOnly ? ordinaryScope.filter({visible:true}) : ordinaryScope;
+        const count = await anchor.count();
+        if (count > 1) throw new Error(`Ambiguous inside anchor ${JSON.stringify(target.inside)}: ${count} matches. Use a more specific readable container or an explicit selector.`);
+        container = anchor;
+      }
+      let result = readable(container, target.text, target.element);
+      if (!target.element) {
+        const labelled = container.getByLabel(target.text, { exact: true });
+        if (await labelled.count() > 0) result = labelled;
+      }
+      if (direction) {
+        const anchor = this.buildHeuristicSelector(target[direction]!, undefined, true, false, true);
+        const relation = { near:'near', above:'above', under:'below', below:'below', leftOf:'left-of', rightOf:'right-of' }[direction];
+        result = result.and(container.locator(`*:${relation}(${anchor})`));
+      }
+      return visibleOnly ? result.filter({visible:true}) : result;
+    };
+    const page = this.getPage();
+    const scope = explicitScope || this.getScope();
+    if (frameSelector) return resolve(scope.frameLocator(frameSelector));
+    const main = await resolve(scope);
+    if (explicitScope || this.hasFrameScope()) return main;
+    if (await main.count() > 0) return main;
+    const frames: Locator[] = [];
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue;
+      try {
+        const candidate = await resolve(frame);
+        if (await candidate.count() > 0) frames.push(candidate);
+      } catch (error) {
+        if (!/detached/i.test(String(error))) throw error;
+      }
+    }
+    if (frames.length > 1) throw new Error('Readable target matched in multiple frames. Specify frame to select one explicitly.');
+    return frames[0] || main;
   }
 
   public async clearHUD(): Promise<void> {
@@ -2039,7 +2252,7 @@ export class WebAdapter {
       }
     } finally {
       await this.browser?.close().catch(error => failures.push(error));
-      this.profiles.clear(); this.context = null; this.page = null; this.browser = null;
+      this.profiles.clear(); this.namedPages.clear(); this.frameScopes = new WeakMap(); this.context = null; this.page = null; this.browser = null;
     }
     if (failures.length) throw new AggregateError(failures, 'Browser evidence finalization failed.');
   }

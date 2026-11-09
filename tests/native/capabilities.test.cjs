@@ -74,8 +74,32 @@ test('generated CI matrix uses native browser/shard options and preserves existi
  try{initCI('github',{browsers:'chromium,firefox,webkit',shards:'3'});const file=path.join(root,'.github/workflows/flowstride.yml'),text=fs.readFileSync(file,'utf8');assert(text.includes('fail-fast: false'));assert(text.includes('shard: [1,2,3]'));assert(text.includes('--browser ${{ matrix.browser }} --shard ${{ matrix.shard }}/3'));assert(text.includes('flowstride-results-${{ matrix.browser }}-${{ matrix.shard }}'));assert.throws(()=>initCI('github'),/not overwritten/);assert.equal(fs.readFileSync(file,'utf8'),text);
  }finally{process.chdir(old);}
 });
-test('API retry checkpoint restores response and authorization without keeping failed-attempt changes',()=>{
- const {ApiAdapter}=require('../../dist/adapters/api/undici');const api=new ApiAdapter({timeout:1000});api.setGlobalHeader('Authorization','Bearer fixture-original');api.lastStatus=200;api.lastBody={ok:true};api.lastHeaders={'x-state':'original'};const checkpoint=api.checkpointState();api.setGlobalHeader('Authorization','Bearer fixture-changed');api.lastBody.ok=false;api.restoreState(checkpoint);assert.equal(api.globalHeaders.Authorization,'Bearer fixture-original');assert.deepEqual(api.getState().body,{ok:true});
+test('API retry checkpoint restores response and authorization without keeping failed-attempt changes', async t => {
+  const { createServer } = require('node:http');
+  const { ApiAdapter } = require('../../dist/adapters/api/undici');
+  const server = createServer((req, res) => {
+    const original = req.url === '/original';
+    res.writeHead(original ? 200 : 503, { 'content-type': 'application/json', 'x-state': original ? 'original' : 'changed' });
+    res.end(JSON.stringify({ ok: original }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    server.closeAllConnections();
+    return new Promise(resolve => server.close(resolve));
+  });
+  const api = new ApiAdapter({ baseUrl: `http://127.0.0.1:${server.address().port}`, timeout: 1000 });
+  api.setGlobalHeader('Authorization', 'Bearer fixture-original');
+  await api.get('/original');
+  const checkpoint = api.checkpointState();
+  api.setGlobalHeader('Authorization', 'Bearer fixture-changed');
+  await api.get('/changed');
+  assert.equal(api.getState().status, 503);
+  api.restoreState(checkpoint);
+  assert.equal(api.snapshotHeaders().Authorization, 'Bearer fixture-original');
+  const response = api.getState();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers['x-state'], 'original');
+  assert.deepEqual(response.body, { ok: true });
 });
 test('stealth adapter wraps the pinned browser instead of selecting a separate optional peer runtime',()=>{
  const vm=require('node:vm'),{createRequire}=require('node:module'),filename=path.resolve(__dirname,'../../dist/adapters/web/playwright.js'),load=createRequire(filename);let wrapped=false;

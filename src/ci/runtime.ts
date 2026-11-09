@@ -1,8 +1,10 @@
+import { redactText } from '../security/redaction';
 import { evidenceDirectory, writeEvidence, protectEvidenceTree, exportEvidence } from '../security/evidence';
 import { assertionText } from '../reporting/assertion_result';
+import { prepareWorkflowFeatures } from '../native/workflow_plan';
 import { executionPlan } from './distribution';
 import { createHash } from 'node:crypto';
-import { discoverFlows, flowIdentity, videoFileName, selectedFeatures } from '../utils/projectPaths';
+import { flowIdentity, videoFileName } from '../utils/projectPaths';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -12,7 +14,7 @@ import { Parser } from '../parser/parser';
 import type { FlowstrideConfig } from '../types';
 
 export interface NativeRunResult {
-  protocol: 1; engine: string; status: 'passed' | 'failed' | 'interrupted';
+  protocol: 1; engine: string; status: 'passed' | 'failed' | 'interrupted' | 'skipped';
   duration: number; artifactsDir: string; files: string[]; steps: any[]; errors: string[];
   metrics: { total: number; passed: number; failed: number; skipped: number; incomplete: number };
 }
@@ -20,16 +22,18 @@ function safeName(name: string) { return name.replace(/[^a-zA-Z0-9_.-]/g, '_').s
 function xml(value: unknown) { return String(value).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').replace(/[<>&"']/g, char => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[char]!)); }
 export async function runNativeCI(worker: any, orchestrator: any, target: string, config: FlowstrideConfig, engine: string): Promise<NativeRunResult> {
   const started = Date.now();
+  delete config.nativeDataManifest;
   const artifactRoot = config.artifactsDir!;
   evidenceDirectory(config, artifactRoot);
   const directory = fs.mkdtempSync(path.join(artifactRoot, 'run-'));
   evidenceDirectory(config, directory);
   config.artifactsDir = directory;
-  const plan = executionPlan(target, config);
+  let plan: ReturnType<typeof executionPlan> | undefined;
   const browsers = new Map<string, any>();
   const attempts: any[] = []; const attemptSteps = new Map<string, any[]>(); const timings: Record<string,number> = {};
   const steps = new Map<string, any>(); const completed = new Set<string>(); const errors: string[] = [];
   const planned = new Map<string, any>(); let bailed = false;
+  let hasRunnableScenario = false;
   let expected = 0; let files: string[] = []; let server: ChildProcess | undefined; let interrupted = false;
   const interrupt = () => { interrupted = true; worker.abort(); orchestrator.abort?.(); };
   const event = (data: any) => {
@@ -65,11 +69,13 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
   if (orchestrator.nativeEventProtocol !== 1) worker.on('worker_event', event);
   process.on('SIGINT', interrupt); process.on('SIGTERM', interrupt);
   try {
+    plan = executionPlan(target, config);
     files = plan.files;
     config.flowRoot = fs.statSync(target).isDirectory() ? target : path.dirname(target);
     if (!plan.allFiles.length) throw new Error('No .flow tests found.');
     for (const file of files) {
-      const features = selectedFeatures(new Parser(new Lexer(fs.readFileSync(file, 'utf8')).tokenise()).parse());
+      const features = prepareWorkflowFeatures(new Parser(new Lexer(fs.readFileSync(file, 'utf8')).tokenise()).parse(), config);
+      hasRunnableScenario ||= features.some(feature => feature.scenarios.some(scenario => !scenario.skipReason && scenario.steps.length));
       for (const feature of features) for (const scenario of feature.scenarios) for (const step of scenario.steps) {
         const fileName = flowIdentity(file, config.flowRoot);
         planned.set(`${fileName}:${step.id}`, { id: step.id, description: step.blockDescription, command: step.action, fileName, status: 'skipped', reason: 'bail' });
@@ -77,7 +83,7 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
       expected += features.reduce((n: number, feature: any) => n + feature.scenarios.reduce((m: number, scenario: any) => m + scenario.steps.length, 0), 0);
     }
     if (files.length && !expected) throw new Error('No executable test steps found.');
-    if (config.webServer) {
+    if (config.webServer && hasRunnableScenario) {
       const settings = config.webServer;
       const probe = async () => { try { return (await fetch(settings.url, { signal: AbortSignal.timeout(1000) })).ok; } catch { return false; } };
       if (await probe()) throw new Error('webServer readiness URL is already serving; refusing to test an unowned server.');
@@ -98,7 +104,15 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
     if (interrupted) throw new Error('Run interrupted before execution.');
     const ok = await orchestrator.start(target);
     if (ok === false && ![...steps.values()].some(step => step.status === 'failed')) errors.push('Engine reported a failed run.');
-  } catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const secrets = [config.machineToken || '', ...Object.entries(process.env)
+      .filter(([key]) => /password|token|secret|api.?key/i.test(key))
+      .map(([, value]) => value || '')];
+    const safe = redactText(message, secrets);
+    errors.push(safe);
+    if (!plan) console.error(`[Flowstride plan] ${safe}`);
+  }
   finally {
     try { await worker.shutdown(); } catch (error) { errors.push(`Cleanup failed: ${String(error)}`); }
     try { await orchestrator.close?.(); } catch (error) { errors.push(`Orchestrator cleanup failed: ${String(error)}`); }
@@ -123,7 +137,7 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
   const metrics = { total: expected, passed: results.filter(s => s.status === 'passed').length,
     failed: results.filter(s => s.status === 'failed').length, skipped: results.filter(s => ['skipped','not_tested'].includes(s.status)).length, incomplete };
   if (config.failOnFlaky && attempts.some(attempt => attempt.flaky)) errors.push('Flaky scenarios are configured to fail CI.');
-  const result: NativeRunResult & { cloudSync?: unknown; attempts?: any[]; timings?: Record<string,number>; distribution?: unknown } = { cloudSync: config.cloudSyncResult, browser: config.browser || 'chromium', browsers: [...browsers.values()], protocol: 1, engine, status: interrupted ? 'interrupted' : errors.length || metrics.failed || incomplete ? 'failed' : 'passed',
+  const result: NativeRunResult & { cloudSync?: unknown; attempts?: any[]; timings?: Record<string,number>; distribution?: unknown } = { cloudSync: config.cloudSyncResult, browser: config.browser || 'chromium', browsers: [...browsers.values()], protocol: 1, engine, status: interrupted ? 'interrupted' : errors.length || metrics.failed || incomplete ? 'failed' : results.length && results.every(step => step.skipReason) ? 'skipped' : 'passed',
     duration: Date.now() - started, artifactsDir: directory, files: files.map(file => flowIdentity(file, config.flowRoot)), steps: results, errors, metrics, attempts, timings, distribution: { ...plan, files: undefined, flowRoot: undefined } } as any;
   // Existing workers finalize videos into these locations. Copy only run files,
   // never the project directory or credentials.
@@ -140,7 +154,7 @@ export async function runNativeCI(worker: any, orchestrator: any, target: string
   config.artifactsDir = artifactRoot;
   fs.writeFileSync(path.join(artifactRoot, 'timings.json'), JSON.stringify(timings, null, 2));
   fs.writeFileSync(path.join(artifactRoot, 'summary.json'), JSON.stringify(exportEvidence(result), null, 2));
-  const cases = results.map(step => `<testcase classname="${xml(step.fileName)}" name="${xml(step.description || step.id)}">${step.status === 'failed' ? `<failure message="${xml(step.error || 'Test step failed')}"/>` : ['skipped','not_tested'].includes(step.status) ? '<skipped/>' : ''}${step.assertion ? `<system-out>${xml(assertionText(step.assertion))}</system-out>` : ''}</testcase>`);
+  const cases = results.map(step => `<testcase classname="${xml(step.fileName)}" name="${xml(step.description || step.id)}">${step.status === 'failed' ? `<failure message="${xml(step.error || 'Test step failed')}"/>` : ['skipped','not_tested'].includes(step.status) ? step.skipReason ? `<skipped message="${xml(step.skipReason)}"/>` : '<skipped/>' : ''}${step.assertion || step.userMessage ? `<system-out>${xml(step.assertion ? assertionText(step.assertion) : step.userMessage)}</system-out>` : ''}</testcase>`);
   for (const error of errors) cases.push(`<testcase name="execution"><error message="${xml(error)}"/></testcase>`);
   if (incomplete) cases.push(`<testcase name="completion"><failure message="${incomplete} incomplete steps"/></testcase>`);
   fs.writeFileSync(path.join(artifactRoot, 'junit.xml'), `<?xml version="1.0"?><testsuite name="Flowstride" tests="${cases.length}" failures="${metrics.failed + (incomplete ? 1 : 0)}" errors="${errors.length}" skipped="${metrics.skipped}">${cases.join('')}</testsuite>`);

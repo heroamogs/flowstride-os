@@ -1,6 +1,7 @@
 export enum TokenType {
   FEATURE = "FEATURE",
   SCENARIO = "SCENARIO",
+  TAGS = "TAGS",
   BLOCK = "BLOCK",
   COMMAND = "COMMAND",
   MODIFIER = "MODIFIER",
@@ -8,6 +9,7 @@ export enum TokenType {
   PREPOSITION = "PREPOSITION",
   ELEMENT = "ELEMENT",
   STRING = "STRING",
+  NUMBER = "NUMBER",
   LET = "LET",
   ASSIGN = "ASSIGN",
   ALIAS_COMMAND = "ALIAS_COMMAND",
@@ -34,6 +36,7 @@ export class Lexer {
   public tokenise(): Token[] {
     const tokens: Token[] = [];
     let expectingNakedCommand = false;
+    let expectingSoftAssertion = false;
 
     while (this.position < this.input.length) {
       const char = this.input[this.position];
@@ -150,6 +153,17 @@ export class Lexer {
         }
       }
 
+      // Numeric literals are an additive command argument, not a new global token rule.
+      if (/[0-9]/.test(char) && tokens.at(-1)?.type === TokenType.COMMAND &&
+          /^flow\.(wait|pace)$/i.test(tokens.at(-1)!.value)) {
+        let value = '';
+        while (this.position < this.input.length && !/[\s;]/.test(this.input[this.position])) {
+          value += this.input[this.position++];
+        }
+        tokens.push({ type:TokenType.NUMBER, value, line:this.line });
+        continue;
+      }
+
       if (/[a-zA-Z_]/.test(char)) {
         let ident = "";
 
@@ -162,6 +176,15 @@ export class Lexer {
         }
 
         const lowerIdent = ident.toLowerCase();
+
+        if (lowerIdent === 'tags' && this.input[this.position] === ':') {
+          const start = ++this.position;
+          while (this.position < this.input.length && !/[\r\n]/.test(this.input[this.position])) {
+            this.position++;
+          }
+          tokens.push({ type: TokenType.TAGS, value: this.input.slice(start, this.position), line: this.line });
+          continue;
+        }
 
         if (lowerIdent === "let") {
           tokens.push({ type: TokenType.LET, value: ident, line: this.line });
@@ -231,6 +254,19 @@ export class Lexer {
           continue;
         }
 
+        if (expectingSoftAssertion) {
+          expectingSoftAssertion = false;
+          const nativeAssertions = ['assert.that','assert.value','dialog.expect','network.expect','download.expect','stub.expect','a11y.scan','a11y.match','console.expect','channel.expect','visual.match'];
+          if (lowerIdent === 'expect') {
+            tokens.push({ type:TokenType.COMMAND, value:ident, line:this.line });
+          } else if (nativeAssertions.includes(lowerIdent) || lowerIdent === 'api.expectschema') {
+            tokens.push({ type:TokenType.ALIAS_COMMAND, value:'flow.' + (lowerIdent === 'api.expectschema' ? 'api.expectSchema' : lowerIdent), line:this.line });
+          } else {
+            throw new SyntaxError(`Syntax Error on line ${this.line}: flow.soft requires a supported built-in assertion, without repeating 'flow.'. Actions, plugins and flow.try cannot be soft.`);
+          }
+          continue;
+        }
+
         if (expectingNakedCommand) {
           expectingNakedCommand = false;
           if (lowerIdent.startsWith("flow.")) {
@@ -271,6 +307,7 @@ export class Lexer {
             "mail.getotp",
             "extract",
             "hover",
+            "press", "clear", "focus", "blur", "doubleClick", "rightClick", "goBack", "goForward", "reload", "scroll",
           ];
 
           if (
@@ -282,7 +319,7 @@ export class Lexer {
               line: this.line,
             });
             continue;
-          } else if (/^flow\.(browser|assert|network|download|clock|stub|trace|har|a11y|component)\.[a-z]+$/i.test(ident) || (ident.includes(".") && !lowerIdent.startsWith("flow."))) {
+          } else if (/^flow\.(browser|assert|network|download|clock|stub|trace|har|a11y|component|input|tab|frame|dialog|files|data|file|api|console|channel|visual)\.[a-z]+$/i.test(ident) || /^flow\.(call|skipIf|cleanup\.register)$/i.test(ident) || (ident.includes(".") && !lowerIdent.startsWith("flow."))) {
             tokens.push({
               type: TokenType.ALIAS_COMMAND,
               value: ident,
@@ -355,6 +392,12 @@ export class Lexer {
             "flow.mail.getotp",
             "flow.extract",
             "flow.hover",
+            'flow.soft',
+            'flow.wait',
+            'flow.pace',
+            'flow.log',
+            'flow.pause',
+            'flow.press', 'flow.clear', 'flow.focus', 'flow.blur', 'flow.doubleClick', 'flow.rightClick', 'flow.goBack', 'flow.goForward', 'flow.reload', 'flow.scroll',
           ]
             .map((c) => c.toLowerCase())
             .includes(lowerIdent)
@@ -365,6 +408,13 @@ export class Lexer {
             line: this.line,
           });
           if (lowerIdent === "flow.try") expectingNakedCommand = true;
+          if (lowerIdent === 'flow.soft') expectingSoftAssertion = true;
+        } else if (lowerIdent === 'on' && tokens.at(-1)?.type === TokenType.STRING &&
+          tokens.at(-2)?.type === TokenType.COMMAND && /^(?:flow\.)?press$/i.test(tokens.at(-2)!.value)) {
+          tokens.push({type:TokenType.PREPOSITION,value:ident,line:this.line});
+        } else if (['property','network'].includes(lowerIdent) &&
+          tokens.at(-1)?.type === TokenType.COMMAND && /^(?:flow\.)?extract$/i.test(tokens.at(-1)!.value)) {
+          tokens.push({ type:TokenType.MODIFIER, value:ident, line:this.line });
         } else if (
           [
             "text",
@@ -469,7 +519,7 @@ export class Lexer {
             value: ident,
             line: this.line,
           });
-        } else if (/^flow\.(browser|assert|network|download|clock|stub|trace|har|a11y|component)\.[a-z]+$/i.test(ident) || (ident.includes(".") && !lowerIdent.startsWith("flow."))) {
+        } else if (/^flow\.(browser|assert|network|download|clock|stub|trace|har|a11y|component|input|tab|frame|dialog|files|data|file|api|console|channel|visual)\.[a-z]+$/i.test(ident) || /^flow\.(call|skipIf|cleanup\.register)$/i.test(ident) || (ident.includes(".") && !lowerIdent.startsWith("flow."))) {
           tokens.push({
             type: TokenType.ALIAS_COMMAND,
             value: ident,

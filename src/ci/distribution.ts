@@ -1,3 +1,6 @@
+import { isWorkflowToken, prepareWorkflowFeatures } from '../native/workflow_plan';
+import { Parser } from '../parser/parser';
+import { Lexer, TokenType } from '../parser/lexer';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -12,13 +15,36 @@ export function parseShard(value?: string) {
   return { index, total };
 }
 export function executionPlan(target: string, config?: FlowstrideConfig) {
-  const root = config?.projectRoot || process.cwd(), files = discoverFlows(target, root);
+  const root = config?.projectRoot || process.cwd();
+  const available = discoverFlows(target, root);
+  const planConfig: FlowstrideConfig = config || { projectRoot: root, headless: true, timeout: 30000 };
+  const files: string[] = [];
+  const flowHashes: string[][] = [];
   const flowRoot = fs.statSync(target).isDirectory() ? target : path.dirname(target);
   const shard = parseShard(config?.shard);
   const identity = (file: string) => flowIdentity(file, flowRoot);
-  const suiteHash = createHash('sha256').update(JSON.stringify(files.map(file => [identity(file), createHash('sha256').update(fs.readFileSync(file)).digest('hex')]))).digest('hex');
+  for (const file of available) {
+    const bytes = fs.readFileSync(file);
+    const content = bytes.toString('utf8');
+    if (planConfig.scenarioTags?.length || /flow\.(?:data\.cases|call|skipIf|cleanup\.register)|^\s*Tags:/im.test(content)) {
+      const tokens = new Lexer(content).tokenise();
+      const hasPlanningCommands = tokens.some(token => isWorkflowToken(token) ||
+        token.type === TokenType.ALIAS_COMMAND && token.value.toLowerCase() === 'flow.data.cases');
+      if (planConfig.scenarioTags?.length || hasPlanningCommands) {
+        const features = prepareWorkflowFeatures(new Parser(tokens).parse(), planConfig);
+        if (planConfig.scenarioTags?.length && !features.some(feature => feature.scenarios.length)) continue;
+      }
+    }
+    files.push(file);
+    flowHashes.push([identity(file), createHash('sha256').update(bytes).digest('hex')]);
+  }
+  if (planConfig.scenarioTags?.length && !files.length) {
+    throw new Error(`No scenarios matched tags: ${planConfig.scenarioTags.join(', ')}.`);
+  }
+  const datasetHashes=Object.entries(planConfig.nativeDataManifest || {}).sort(([a],[b])=>a.localeCompare(b)).map(([file,hash])=>[path.relative(root,file).split(path.sep).join('/'),hash]);
+  const suiteHash=createHash('sha256').update(JSON.stringify(datasetHashes.length?[flowHashes,datasetHashes]:flowHashes)).digest('hex');
   // Configuration affects compatibility, but only a hash leaves this process.
-  const configHash = createHash('sha256').update(JSON.stringify([require('../../package.json').name, require('../../package.json').version, config?.browser || 'chromium', config?.device || 'desktop', config?.browserOptions || {}, config?.retries || 0, config?.baseUrl || '', config?.timeout || 30000, config?.headless, config?.browserErrors, config?.failOnFlaky, config?.recordVideo, config?.trace, config?.har])).digest('hex');
+  const configHash = createHash('sha256').update(JSON.stringify([require('../../package.json').name, require('../../package.json').version, config?.browser || 'chromium', config?.device || 'desktop', config?.browserOptions || {}, config?.retries || 0, config?.baseUrl || '', config?.timeout || 30000, config?.headless, config?.browserErrors, config?.failOnFlaky, config?.recordVideo, config?.trace, config?.har, ...(config?.scenarioTags?.length ? [config.scenarioTags] : [])])).digest('hex');
   let history: Record<string, number> = {};
   if (config?.shardHistory) {
     history = JSON.parse(fs.readFileSync(projectPath(root, config.shardHistory), 'utf8'));
@@ -47,8 +73,13 @@ export function mergeResults(summaries: string[], output = 'flowstride-merged') 
     if (report.protocol !== 1 || report.engine !== first.engine || !dist || dist.suiteHash !== first.distribution.suiteHash || dist.configHash !== first.distribution.configHash || dist.shard.total !== total || JSON.stringify(dist.allFiles) !== JSON.stringify(first.distribution.allFiles) || JSON.stringify(dist.setupFiles) !== JSON.stringify(first.distribution.setupFiles)) throw new Error('Shards belong to different suites or browser configurations.');
     const { index } = parseShard(`${dist.shard.index}/${dist.shard.total}`);
     if (seen.has(index)) throw new Error('Duplicate shard.'); seen.add(index);
-    if (!['passed','failed','interrupted'].includes(report.status) || !Array.isArray(report.steps) || !Array.isArray(report.files) || !Array.isArray(report.errors)) throw new Error('Invalid shard report.');
+    if (!['passed','failed','interrupted','skipped'].includes(report.status) || !Array.isArray(report.steps) || !Array.isArray(report.files) || !Array.isArray(report.errors)) throw new Error('Invalid shard report.');
     if (!report.metrics || ['total','passed','failed','skipped','incomplete'].some(key => !Number.isSafeInteger(report.metrics[key]) || report.metrics[key] < 0) || report.metrics.passed + report.metrics.failed + report.metrics.skipped + report.metrics.incomplete !== report.metrics.total) throw new Error('Inconsistent shard metrics.');
+    if (report.status === 'skipped' && (!report.steps.length ||
+        report.errors.length || report.metrics.failed || report.metrics.passed ||
+        report.metrics.incomplete || report.steps.some((step: any) => step.status !== 'skipped' || !step.skipReason))) {
+      throw new Error('A skipped shard must contain only explicitly skipped steps.');
+    }
     if (report.status === 'passed' && (report.errors.length || report.metrics.failed || report.metrics.incomplete || report.steps.some((step: any) => !['passed','skipped','not_tested'].includes(step.status)))) throw new Error('A passing shard contains failures or unfinished work.');
     const duplicateSetup = new Set<string>();
     for (const file of report.files) {
@@ -63,7 +94,7 @@ export function mergeResults(summaries: string[], output = 'flowstride-merged') 
   }
   if (seen.size !== total) throw new Error(`Missing shards: expected ${total}, received ${seen.size}.`);
   if (first.distribution.allFiles.some((file: string) => !seenFiles.has(file))) throw new Error('Merged reports omit test files.');
-  const statuses = inputs.map(input => input.report.status), status = statuses.includes('interrupted') ? 'interrupted' : statuses.includes('failed') || errors.length ? 'failed' : 'passed';
+  const statuses = inputs.map(input => input.report.status), status = statuses.includes('interrupted') ? 'interrupted' : statuses.includes('failed') || errors.length ? 'failed' : steps.length && steps.every(step => step.skipReason) ? 'skipped' : 'passed';
   const metrics = inputs.reduce((all, { report }) => { for (const key of ['total','passed','failed','skipped','incomplete'] as const) { const n = report.metrics?.[key]; if (!Number.isSafeInteger(n) || n < 0) throw new Error('Invalid shard metrics.'); all[key] += n; } return all; }, { total:0, passed:0, failed:0, skipped:0, incomplete:0 });
   // Preserve shard-level metrics (setup executes independently on each machine).
   const merged = { protocol:1, engine:first.engine, browser:first.browser, browsers:inputs.flatMap(({report}) => (report.browsers || []).map((info: any) => ({ ...info, shard: report.distribution.shard.index }))), status, metrics, steps, attempts, errors, timings, files:[...seenFiles], duration:Math.max(...inputs.map(input => input.report.duration)), distribution:{ ...first.distribution, merged:true, setupRunsPerShard:true } };

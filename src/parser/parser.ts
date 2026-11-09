@@ -1,4 +1,6 @@
-import { validateExpectationType, validateResponseTimeThreshold, isAssertionStep } from './assertion_contract';
+import { workflowTags } from '../native/workflow_tags';
+import { validateKey } from '../native/interactions';
+import { validateExpectationType, validateResponseTimeThreshold, isAssertionStep, isSoftAssertionStep, isControlDurationTemplate, validateControlDuration, validateControlMessage } from './assertion_contract';
 import { Token, TokenType } from "./lexer";
 
 export interface DeclarationNode {
@@ -14,6 +16,7 @@ export interface StepNode {
   payload: any;
   line: number;
   isStop?: boolean;
+  sourceFile?: string;
 }
 
 export interface ScenarioNode {
@@ -21,6 +24,8 @@ export interface ScenarioNode {
   declarations: DeclarationNode[];
   steps: StepNode[];
   isOnly?: boolean;
+  tags?: string[];
+  skipReason?: string;
 }
 
 export interface FeatureNode {
@@ -91,6 +96,19 @@ export class Parser {
     return features;
   }
 
+  public parseFragment(): StepNode[] {
+    const steps: StepNode[] = [];
+    while (!this.isAtEnd()) {
+      const token = this.peek();
+      if (token.type !== TokenType.COMMAND && token.type !== TokenType.ALIAS_COMMAND) {
+        throw new Error(`Line ${token.line}: A .flowpart file contains commands only.`);
+      }
+      steps.push(this.parseCommand());
+    }
+    if (!steps.length) throw new Error('A .flowpart file must contain at least one command.');
+    return steps;
+  }
+
   private parseDeclaration(): DeclarationNode {
     const letToken = this.advance();
     const aliasToken = this.consume(
@@ -129,6 +147,15 @@ export class Parser {
       TokenType.STRING,
       "Scenario must have a description",
     );
+    let tags: string[] | undefined;
+    if (!this.isAtEnd() && this.peek().type === TokenType.TAGS) {
+      const token = this.advance();
+      try {
+        tags = workflowTags(token.value.split(',').map(tag => tag.trim()));
+      } catch (error) {
+        throw new Error(`Line ${token.line}: ${(error as Error).message}`);
+      }
+    }
     const steps: StepNode[] = [];
     const declarations: DeclarationNode[] = [];
     this.scenarioCounter++;
@@ -227,6 +254,7 @@ export class Parser {
 
         if (
           currentBlockType === "and" &&
+          !(step.action === 'native' && step.payload.pluginMethod.toLowerCase() === 'call') &&
           !isAssertionStep(step.action, step.payload)
         ) {
           throw new Error(
@@ -257,6 +285,7 @@ export class Parser {
       steps,
     };
 
+    if (tags) scenarioNode.tags = tags;
     if (isOnly) {
       scenarioNode.isOnly = true;
     }
@@ -320,6 +349,21 @@ export class Parser {
 
   private parseCommand(): StepNode {
     const commandToken = this.advance();
+
+    if (commandToken.value.toLowerCase() === 'flow.soft') {
+      const next = this.peek();
+      if (next.type !== TokenType.COMMAND && next.type !== TokenType.ALIAS_COMMAND ||
+          next.value.toLowerCase() === 'flow.try' || next.value.toLowerCase() === 'flow.soft') {
+        throw new Error(`Line ${commandToken.line}: flow.soft requires a supported built-in assertion; actions, plugins and flow.try cannot be soft.`);
+      }
+      const step = this.parseCommand();
+      if (!isSoftAssertionStep(step.action, step.payload) || step.payload?.optional) {
+        throw new Error(`Line ${commandToken.line}: flow.soft requires a supported built-in assertion; actions, plugins and flow.try cannot be soft.`);
+      }
+      step.payload.soft = true;
+      step.line = commandToken.line;
+      return step;
+    }
 
     if (commandToken.type === TokenType.ALIAS_COMMAND) {
       const parts = commandToken.value.split(".");
@@ -408,12 +452,78 @@ export class Parser {
       "mail.getotp": "getOtp",
       extract: "extract",
       hover: "hover",
+      press:"press", clear:"clear", focus:"focus", blur:"blur", doubleclick:"doubleClick", rightclick:"rightClick", goback:"goBack", goforward:"goForward", reload:"reload", scroll:"scroll",
     };
 
     const action = actionMap[actionBase] || actionBase;
     let payload: any = { optional: isOptional };
 
     switch (action) {
+      case 'press':
+      case 'clear':
+      case 'focus':
+      case 'blur':
+      case 'doubleClick':
+      case 'rightClick': {
+        if (action === 'press') {
+          const key = this.consume(TokenType.STRING, 'Keyboard key expected');
+          try { payload.key = /\{\{env\.[A-Za-z_]\w*\}\}|@(?:[A-Za-z_]\w*|global\[[A-Za-z_]\w*\])/.test(key.value) ? key.value : validateKey(key.value); } catch (error) { throw new Error(`Line ${key.line}: ${error instanceof Error ? error.message : String(error)}`); }
+          const on = this.consume(TokenType.PREPOSITION, 'Expected on before the readable keyboard target');
+          if (on.value.toLowerCase() !== 'on') throw new Error(`Line ${on.line}: Expected on before the readable keyboard target.`);
+        }
+        this.consumeOptionalElement(payload);
+        const start = this.position;
+        payload.selector = this.parseSmartSelectorPayload();
+        const parts = this.tokens.slice(start, this.position);
+        if (parts[0]?.type === TokenType.STRING) {
+          const readable: any = { text:parts[0].value,...(payload.elementType ? {element:payload.elementType} : {}) };
+          for (let index=1; index<parts.length; index++) {
+            let raw: string, value: string;
+            if (parts[index].type === TokenType.SPATIAL) { raw=parts[index].value;value=parts[++index].value; }
+            else {
+              const shorthand=/^(near|above|under|below|leftOf|rightOf|inside|in):\s*(.*)$/i.exec(parts[index].value);
+              if (!shorthand) continue;raw=shorthand[1];value=shorthand[2];
+            }
+            raw=raw.toLowerCase();const key=raw==='in'?'inside':raw==='leftof'?'leftOf':raw==='rightof'?'rightOf':raw;
+            if (Object.hasOwn(readable,key)) throw new Error(`Line ${commandToken.line}: Do not repeat a spatial relationship.`);
+            readable[key]=value;
+          }
+          payload.readableTarget=readable;
+        }
+        break;
+      }
+      case 'goBack': case 'goForward': case 'reload': break;
+      case 'scroll': {
+        const data = this.consume(TokenType.JSON_PAYLOAD, 'flow.scroll requires an object with a target and/or x/y distances');
+        try { payload.data = JSON.parse(data.value); } catch { throw new Error(`Line ${data.line}: Invalid JSON payload for flow.scroll.`); }
+        break;
+      }
+
+      case 'wait':
+      case 'pace': {
+        const durationToken = this.peek();
+        if (durationToken.type !== TokenType.NUMBER && durationToken.type !== TokenType.STRING) {
+          throw new Error(`Line ${commandToken.line}: flow.${action} requires a duration in milliseconds, or a quoted variable template.`);
+        }
+        this.advance();
+        if (durationToken.type === TokenType.STRING) {
+          if (!isControlDurationTemplate(durationToken.value)) {
+            throw new Error(`Line ${durationToken.line}: flow.${action} requires an unquoted integer or a quoted variable template.`);
+          }
+          payload.milliseconds = durationToken.value;
+        } else {
+          payload.milliseconds = validateControlDuration(durationToken.value, action);
+        }
+        break;
+      }
+      case 'log':
+      case 'pause': {
+        const messageToken = this.consume(TokenType.STRING, `flow.${action} requires a message in double quotes`);
+        try { payload.message = validateControlMessage(messageToken.value, action); }
+        catch (error) { throw new Error(`Line ${messageToken.line}: ${error instanceof Error ? error.message : String(error)}`); }
+        break;
+      }
+
       case "extract":
         const extTargetToken = this.consume(
           TokenType.MODIFIER,
@@ -456,23 +566,46 @@ export class Parser {
             "text",
             "value",
             "attribute",
+            "property",
+            "network",
           ].includes(extTarget)
         ) {
           throw new Error(
-            `Line ${extTargetToken.line}: Expected 'resBody', 'resHeader', 'cookie', 'text', 'value', or 'attribute' after extract`,
+            `Line ${extTargetToken.line}: Expected 'resBody', 'resHeader', 'cookie', 'text', 'value', 'attribute', 'property', or 'network' after extract`,
           );
         }
 
         payload.target = extTarget;
 
-        if (["resBody", "resHeader", "cookie"].includes(extTarget)) {
+        if (extTarget === "network") {
+          payload.captureName = this.consume(TokenType.STRING, "Captured network event name expected").value;
+          payload.jsonPath = this.consume(TokenType.STRING, "Captured network data path expected").value;
+        } else if (["resBody", "resHeader", "cookie"].includes(extTarget)) {
           payload.jsonPath = this.consume(
             TokenType.STRING,
             "JSONPath or Key expected",
           ).value;
         } else {
           this.consumeOptionalElement(payload);
+          const targetStart = this.position;
           payload.selector = this.parseSmartSelectorPayload();
+          if (extTarget === 'property') {
+            const parts = this.tokens.slice(targetStart, this.position);
+            if (parts[0]?.type === TokenType.STRING) {
+              const readable: any = {text:parts[0].value,...(payload.elementType ? {element:payload.elementType} : {})};
+              for (let index = 1; index < parts.length; index++) {
+                if (parts[index].type !== TokenType.SPATIAL) continue;
+                const raw = parts[index].value.toLowerCase();
+                const relation = raw === 'in' ? 'inside' : raw === 'leftof' ? 'leftOf' : raw === 'rightof' ? 'rightOf' : raw;
+                if (Object.hasOwn(readable, relation)) throw new Error('Do not repeat a spatial relationship in a property extraction.');
+                readable[relation] = parts[++index].value;
+              }
+              payload.readableTarget = readable;
+            }
+          }
+          if (extTarget === "property") {
+            payload.property = this.consume(TokenType.STRING, "Browser property path expected").value;
+          }
           if (extTarget === "attribute") {
             payload.attribute = this.consume(
               TokenType.STRING,

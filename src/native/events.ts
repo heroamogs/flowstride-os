@@ -1,3 +1,5 @@
+import { setTimeout as sleep } from 'node:timers/promises';
+import { parseDataPath, readDataPath } from './paths';
 import { assertionCheck, requireAssertion, diagnosticValue, type AssertionReporter } from '../reporting/assertion_result';
 import { z } from 'zod';
 import type { Download, Request, Response, Route, BrowserContext, Page } from 'playwright';
@@ -20,6 +22,7 @@ export class ArmedEvent<T> {
   constructor(timeout: number, private detach: () => void) {
     this.timer = setTimeout(() => this.fail(new Error('Armed event timed out.')), positive.parse(timeout));
   }
+  get pending(): boolean { return !this.settled; }
   capture(value: T) { if (this.settled) return; this.settled = true; clearTimeout(this.timer); this.detach(); this.resolve({ value }); }
   fail(error: Error) { if (this.settled) return; this.settled = true; clearTimeout(this.timer); this.detach(); this.resolve({ error }); }
   async take(): Promise<T> { const result = await this.promise; if (result.error) throw result.error; return result.value!; }
@@ -34,11 +37,13 @@ const routeSchema = z.object({ name, url: urlPattern, method: z.string().optiona
   headers: headers.optional(), json: z.unknown().optional(), body: z.string().optional(), fixture: z.string().optional(),
   contentType: z.string().optional(), request: z.object({ url: z.string().url().optional(), method: z.string().optional(), headers: headers.optional(), body: z.string().optional() }).strict().optional(),
   times: positive.optional(),
+  delay: z.number().int().min(0).max(120000).optional(),
+  requestBody: z.object({ path: z.string().min(1).max(1000), equals: z.json() }).strict().optional(),
 }).strict();
 const armSchema = z.object({ name, url: urlPattern, method: z.string().optional(), kind: z.enum(['request','response']).default('response'), timeout: positive.optional(), status: z.number().int().optional() }).strict();
 const networkExpect = z.object({ name, status: z.number().int().optional(), method: z.string().optional(), header: z.string().optional(), equals: z.unknown().optional(), path: z.string().optional(), contains: z.string().optional() }).strict();
 export class NativeEvents {
-  private routes = new Map<string, { context: BrowserContext; handler: (route: Route) => Promise<void>; pattern: string }>();
+  private routes = new Map<string, { context: BrowserContext; handler: (route: Route) => Promise<void>; pattern: string; cancellation: AbortController }>();
   private events = new Map<string, ArmedEvent<any>>();
   private captured = new Map<string, any>();
   private routeErrors: string[] = [];
@@ -47,6 +52,15 @@ export class NativeEvents {
   private savedDownloads = new Map<string, { file: string; suggested: string }>();
   constructor(private web: WebAdapter, private config: FlowstrideConfig) {}
   private key(value: string) { return `${this.web.activeProfile}:${value}`; }
+  extractNetwork(captureName: string, dataPath: string): unknown {
+    const key = this.key(name.parse(captureName));
+    if (this.events.has(key)) throw new Error('Wait for the armed network event with flow.network.wait before extracting it.');
+    if (!this.captured.has(key)) throw new Error(`No captured network event "${captureName}" in browser profile "${this.web.activeProfile}"; arm and wait for it first.`);
+    return readDataPath(this.captured.get(key), dataPath);
+  }
+  cancelRoutes() {
+    for (const route of this.routes.values()) route.cancellation.abort();
+  }
   async network(action: string, input: unknown, reporter?: AssertionReporter): Promise<any> {
     if (this.routeErrors.length) throw new Error(`Network route failed: ${this.routeErrors.shift()}`);
     if (action === 'route') {
@@ -58,10 +72,26 @@ export class NativeEvents {
       if (data.mode === 'patch' && data.json !== undefined && (!data.json || typeof data.json !== 'object' || Array.isArray(data.json))) throw new Error('Response patches require a JSON object.');
       if ([data.json !== undefined, data.body !== undefined, data.fixture !== undefined].filter(Boolean).length > 1) throw new Error('Choose one route body source.');
       const body = data.fixture ? readProjectFile(this.config, data.fixture) : data.body;
-      let remaining = data.times ?? Infinity; const generation = this.generation;
+      const predicate = data.requestBody;
+      if (predicate) parseDataPath(predicate.path);
+      const cancellation = new AbortController();
+      let remaining = data.times ?? Infinity;
+      let active = 0;
+      const generation = this.generation;
+      const matchesBody = (route: Route): boolean => {
+        if (!predicate) return true;
+        const bytes = route.request().postDataBuffer();
+        if (!bytes || bytes.length > 1024 * 1024) return false;
+        try {
+          return isDeepStrictEqual(readDataPath(JSON.parse(bytes.toString('utf8')), predicate.path), predicate.equals);
+        } catch { return false; }
+      };
       const operation = async (route: Route) => {
-        if (remaining <= 0 || data.method && route.request().method().toUpperCase() !== data.method.toUpperCase()) return route.fallback();
-        if (--remaining === 0) this.routes.delete(key);
+        if (cancellation.signal.aborted) return route.abort();
+        if (remaining <= 0 || data.method && route.request().method().toUpperCase() !== data.method.toUpperCase() || !matchesBody(route)) return route.fallback();
+        remaining--;
+        if (data.delay) await sleep(data.delay, undefined, { signal: cancellation.signal });
+        if (cancellation.signal.aborted) return route.abort();
         if (data.mode === 'abort') return route.abort();
         if (data.mode === 'continue') return route.continue({ ...data.request, postData: data.request?.body, headers: data.request?.headers ? { ...route.request().headers(), ...data.request.headers } : undefined });
         if (data.mode === 'patch') {
@@ -73,18 +103,32 @@ export class NativeEvents {
           ...(data.json === undefined ? { body: body ?? '' } : { json: data.json }) });
       };
       const handler = async (route: Route) => {
-        try { await operation(route); if (remaining === 0) await context.unroute(data.url, handler); }
+        active++;
+        try { await operation(route); }
         catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          if (generation === this.generation) { this.routeErrors.push(message); this.web.pageErrors.push(`Native route: ${message}`); }
+          if (!cancellation.signal.aborted && generation === this.generation) { this.routeErrors.push(message); this.web.pageErrors.push(`Native route: ${message}`); }
           await route.abort().catch(() => {});
+        } finally {
+          active--;
+          if (!active && remaining === 0 && this.routes.get(key)?.handler === handler) {
+            this.routes.delete(key);
+            await context.unroute(data.url, handler).catch(() => {});
+          }
         }
       };
-      await context.route(data.url, handler); this.routes.set(key, { context, pattern: data.url, handler }); return;
+      this.routes.set(key, { context, pattern: data.url, handler, cancellation });
+      try { await context.route(data.url, handler); }
+      catch (error) { this.routes.delete(key); throw error; }
+      return;
     }
     if (action === 'unroute') {
       const data = z.object({ name }).strict().parse(input), key = this.key(data.name), route = this.routes.get(key);
-      if (!route) throw new Error('Unknown route.'); await route.context.unroute(route.pattern, route.handler); this.routes.delete(key); return;
+      if (!route) throw new Error('Unknown route.');
+      route.cancellation.abort();
+      this.routes.delete(key);
+      await route.context.unroute(route.pattern, route.handler);
+      return;
     }
     if (action === 'arm') {
       const data = armSchema.parse(input), key = this.key(data.name), context = this.web.getContext();
@@ -96,7 +140,7 @@ export class NativeEvents {
         armed.capture(event);
       };
       const armed = new ArmedEvent<Request | Response>(data.timeout ?? this.config.timeout, () => data.kind === 'request' ? context.off('request', listener) : context.off('response', listener));
-      if (data.kind === 'request') context.on('request', listener); else context.on('response', listener); this.events.set(key, armed); return;
+      if (data.kind === 'request') context.on('request', listener); else context.on('response', listener); this.captured.delete(key); this.events.set(key, armed); return;
     }
     if (action === 'wait') {
       const data = z.object({ name }).strict().parse(input), key = this.key(data.name), armed = this.events.get(key);
@@ -178,10 +222,11 @@ export class NativeEvents {
     const prefix = profile + ':';
     for (const map of [this.events, this.downloads]) for (const [key, event] of map) if (key.startsWith(prefix)) { event.fail(new Error('Profile closed.')); map.delete(key); }
     for (const map of [this.captured, this.savedDownloads]) for (const key of map.keys()) if (key.startsWith(prefix)) map.delete(key);
-    for (const [key, route] of this.routes) if (key.startsWith(prefix)) { await route.context.unroute(route.pattern, route.handler).catch(() => {}); this.routes.delete(key); }
+    for (const [key, route] of this.routes) if (key.startsWith(prefix)) { route.cancellation.abort(); this.routes.delete(key); await route.context.unroute(route.pattern, route.handler).catch(() => {}); }
   }
   async dispose() {
     this.generation++;
+    this.cancelRoutes();
     for (const armed of [...this.events.values(), ...this.downloads.values()]) armed.fail(new Error('Event cancelled during cleanup.'));
     this.events.clear(); this.downloads.clear(); this.captured.clear(); this.savedDownloads.clear();
     for (const route of this.routes.values()) await route.context.unroute(route.pattern, route.handler).catch(() => {});

@@ -1,4 +1,7 @@
 export interface FlowstrideConfig {
+  /** Internal run plan: immutable dataset and fragment fingerprints, never row values. */
+  nativeDataManifest?: Record<string,string>;
+  scenarioTags?: string[];
   browser?: 'chromium' | 'firefox' | 'webkit';
   browserOptions?: import('playwright').BrowserContextOptions;
   retries?: number;

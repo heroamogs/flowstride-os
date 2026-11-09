@@ -1,3 +1,4 @@
+import { aggregateFileStatus, aggregateStepStatus } from "../utils/executionStatus";
 import { AssertionDetails } from "./AssertionDetails";
 import React, { useState, useEffect, useRef } from "react";
 import {
@@ -52,23 +53,12 @@ export const FlowList = () => {
   }, [activeTestFile]);
 
   const total = fileList.length;
-  let passed = 0;
-  let failed = 0;
-
-  fileList.forEach((fileName) => {
-    const fileScenarios = testScenarios.filter((s) => s.fileName === fileName);
-    const allSteps = fileScenarios.flatMap((s) => s.steps);
-
-    if (allSteps.length > 0) {
-      if (fileScenarios.some(s=>s.status === "failed") || allSteps.some((s) => s.status === "failed")) {
-        failed++;
-      } else if (
-        allSteps.every((s) => ["pass", "passed", "success"].includes(s.status))
-      ) {
-        passed++;
-      }
-    }
-  });
+  const fileStatuses = new Map(fileList.map(fileName => [
+    fileName,
+    aggregateFileStatus(testScenarios.filter(scenario => scenario.fileName === fileName)),
+  ]));
+  const passed = [...fileStatuses.values()].filter(status => status === "passed").length;
+  const failed = [...fileStatuses.values()].filter(status => status === "failed").length;
 
   const toggleFile = (fileName: string) => {
     setExpandedFile(expandedFile === fileName ? null : fileName);
@@ -141,6 +131,7 @@ export const FlowList = () => {
             }}
           >
             <div
+              data-flow-count="total"
               style={{ fontSize: "18px", fontWeight: "bold", color: "#c9d1d9" }}
             >
               {total}
@@ -161,6 +152,7 @@ export const FlowList = () => {
             }}
           >
             <div
+              data-flow-count="passed"
               style={{ fontSize: "18px", fontWeight: "bold", color: "#34d399" }}
             >
               {passed}
@@ -181,6 +173,7 @@ export const FlowList = () => {
             }}
           >
             <div
+              data-flow-count="failed"
               style={{ fontSize: "18px", fontWeight: "bold", color: "#f87171" }}
             >
               {failed}
@@ -248,21 +241,7 @@ export const FlowList = () => {
           );
           const allSteps = fileScenarios.flatMap((s) => s.steps);
 
-          let fileStatus = "pending";
-          if (allSteps.length > 0) {
-            if (fileScenarios.some(s=>s.status === "failed") || allSteps.some((s) => s.status === "failed"))
-              fileStatus = "failed";
-            else if (allSteps.some((s) => s.status === "running"))
-              fileStatus = "running";
-            else if (
-              allSteps.every((s) =>
-                ["pass", "passed", "success"].includes(s.status),
-              )
-            )
-              fileStatus = "pass";
-          } else if (fileScenarios.some((s) => s.status === "running")) {
-            fileStatus = "running";
-          }
+          const fileStatus = fileStatuses.get(fileName) || "pending";
 
           type BlockType = {
             id: string;
@@ -291,21 +270,11 @@ export const FlowList = () => {
           });
 
           blocks.forEach((block) => {
-            if (block.steps.some((s) => s.status === "failed"))
-              block.status = "failed";
-            else if (block.steps.some((s) => s.status === "running"))
-              block.status = "running";
-            else if (
-              block.steps.every((s) =>
-                ["pass", "passed", "success"].includes(s.status),
-              )
-            )
-              block.status = "pass";
-            else block.status = "pending";
+            block.status = aggregateStepStatus(block.steps);
           });
 
           return (
-            <div key={fileName} style={{ borderBottom: "1px solid #21262d" }}>
+            <div key={fileName} data-flow-result={fileName} data-flow-status={fileStatus} style={{ borderBottom: "1px solid #21262d" }}>
               <div
                 onClick={() => toggleFile(fileName)}
                 onMouseEnter={(e) =>
@@ -372,7 +341,7 @@ export const FlowList = () => {
                     blocks.map((block) => {
                       const blockExpanded = expandedBlocks[block.id] !== false;
                       return (
-                        <div key={block.id}>
+                        <div key={block.id} data-flow-block={block.id} data-flow-block-status={block.status}>
                           <div
                             onClick={(e) => toggleBlock(block.id, e)}
                             onMouseEnter={(e) =>
@@ -460,6 +429,7 @@ export const FlowList = () => {
                                     }
                                     data-flow-file={fileName}
                                     data-step-id={step.id}
+                                    data-step-status={step.status}
                                     data-active-step={
                                       isCurrentTravelTarget ? "true" : "false"
                                     }
@@ -506,6 +476,7 @@ export const FlowList = () => {
                                       }}
                                     >
                                       {step.commandLabel || step.command}
+                                      {step.userMessage !== undefined && <div data-user-message style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', color: '#c4b5fd', marginTop: '4px' }}>{step.userMessage}</div>}
                                       <AssertionDetails result={step.assertion} />
                                       {step.error && !step.assertion && <div style={{whiteSpace:'pre-wrap',color:'#f87171'}}>{step.error}</div>}
                                     </span>

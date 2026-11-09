@@ -1,4 +1,4 @@
-import { randomUUID, randomInt, randomBytes } from "node:crypto";
+import { randomUUID, randomInt, randomBytes, createHash, createHmac } from "node:crypto";
 import identitiesData from "../test_data/identities.json";
 import geographyData from "../test_data/geography.json";
 import commerceData from "../test_data/commerce.json";
@@ -17,6 +17,45 @@ export class DataGenerators {
     this.memoryBank = new Map<string, string>();
     this.runIdContext = runId;
     this.workerIdContext = workerId;
+  }
+
+  private seedKey?: Buffer;
+  private seedCounter = 0;
+  public isSeeded(): boolean { return this.seedKey !== undefined; }
+  public setSeed(seed: string, context = ''): void {
+    if (typeof seed !== 'string' || !seed.trim() || seed.length > 1024 || /[\x00-\x1f\x7f]/.test(seed)) throw new Error('flow.data.seed requires 1–1024 nonblank characters without control codes.');
+    this.seedKey = createHash('sha256').update('flowstride-test-data-v1'+JSON.stringify([seed,context])).digest();
+    this.seedCounter = 0; this.memoryBank.clear();
+  }
+  public checkpoint() {
+    return { key:this.seedKey?.toString('hex'), counter:this.seedCounter, memory:[...this.memoryBank.entries()], runId:this.runIdContext, workerId:this.workerIdContext };
+  }
+  public restore(snapshot: ReturnType<DataGenerators['checkpoint']>): void {
+    this.seedKey = snapshot.key ? Buffer.from(snapshot.key,'hex') : undefined; this.seedCounter = snapshot.counter;
+    this.memoryBank = new Map(snapshot.memory); this.runIdContext = snapshot.runId; this.workerIdContext = snapshot.workerId;
+  }
+  public fork(context: string): DataGenerators {
+    const instance = new DataGenerators(this.runIdContext,this.workerIdContext); instance.restore(this.checkpoint());
+    if (this.seedKey) { instance.seedKey = createHmac('sha256',this.seedKey).update('case:'+context).digest(); instance.seedCounter=0; }
+    return instance;
+  }
+  private bytes(length: number): Buffer {
+    if (!this.seedKey) return randomBytes(length);
+    const blocks:Buffer[]=[];
+    for(let total=0;total<length;total+=32){const count=Buffer.alloc(8);count.writeBigUInt64BE(BigInt(this.seedCounter++));blocks.push(createHmac('sha256',this.seedKey).update(count).digest());}
+    return Buffer.concat(blocks).subarray(0,length);
+  }
+  private integer(minimum: number, maximum: number): number {
+    if (!this.seedKey) return randomInt(minimum,maximum);
+    const range=maximum-minimum,space=2**48,limit=Math.floor(space/range)*range;
+    let value:number;do{value=this.bytes(6).readUIntBE(0,6);}while(value>=limit);
+    return minimum+value%range;
+  }
+  private fraction(): number { return this.seedKey ? this.bytes(6).readUIntBE(0,6)/(2**48) : Math.random(); }
+  private identifier(): string {
+    if(!this.seedKey)return randomUUID();
+    const bytes=this.bytes(16);bytes[6]=(bytes[6]!&15)|64;bytes[8]=(bytes[8]!&63)|128;
+    const hex=bytes.toString('hex');return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
   }
 
   public sensitiveValues(): string[] {
@@ -94,21 +133,23 @@ export class DataGenerators {
 
   private pickRandom<T>(array: T[]): T {
     if (!array || array.length === 0) return "" as unknown as T;
-    return array[randomInt(0, array.length)];
+    return array[this.integer(0, array.length)];
   }
 
-  public uuid = () => randomUUID();
+  private seededString(length:number,characters:string):string { let result='';for(let index=0;index<length;index++)result+=characters[this.integer(0,characters.length)];return result; }
+
+  public uuid = () => this.identifier();
   public timestamp = () => Math.floor(Date.now() / 1000).toString();
   public isoTimestamp = () => new Date().toISOString();
-  public randomIntStr = () => randomInt(1000, 99999).toString();
-  public randomNumber = () => Math.floor(Math.random() * 1000000).toString();
-  public randomString = () => randomBytes(4).toString("hex");
-  public randomAlpha = () =>
-    Math.random()
+  public randomIntStr = () => this.integer(1000, this.isSeeded()?100000:99999).toString();
+  public randomNumber = () => (this.isSeeded()?this.integer(0,1000000):Math.floor(this.fraction() * 1000000)).toString();
+  public randomString = () => this.bytes(4).toString("hex");
+  public randomAlpha = () => this.isSeeded()?this.seededString(6,'abcdefghijklmnopqrstuvwxyz'):
+    this.fraction()
       .toString(36)
       .replace(/[^a-z]+/g, "")
       .substring(0, 6);
-  public randomAlphaNumeric = () => Math.random().toString(36).substring(2, 10);
+  public randomAlphaNumeric = () => this.isSeeded()?this.seededString(8,'abcdefghijklmnopqrstuvwxyz0123456789'):this.fraction().toString(36).substring(2, 10);
 
   public randomFirstName = () => this.pickRandom(identitiesData.firstNames);
   public randomLastName = () => this.pickRandom(identitiesData.lastNames);
@@ -127,10 +168,10 @@ export class DataGenerators {
   public randomDomain = () => identitiesData.emailDomains[0];
 
   private generateLocalizedPhone(prefix: string, length: number): string {
-    const firstDigit = randomInt(1, 9).toString();
+    const firstDigit = this.integer(1, this.isSeeded()?10:9).toString();
     let remainingDigits = "";
     for (let i = 1; i < length; i++) {
-      remainingDigits += randomInt(0, 9).toString();
+      remainingDigits += this.integer(0, this.isSeeded()?10:9).toString();
     }
     return `${prefix}${firstDigit}${remainingDigits}`;
   }
@@ -150,13 +191,13 @@ export class DataGenerators {
     return this.generateLocalizedPhone(rules.prefix, rules.length);
   };
 
-  public randomPhoneNG = () => `0${randomInt(7000000000, 9099999999)}`;
+  public randomPhoneNG = () => `0${this.integer(7000000000, this.isSeeded()?9100000000:9099999999)}`;
 
   public randomPassword = () => `P@ss${this.randomAlphaNumeric()}!`;
-  public randomOtp = () => randomInt(100000, 999999).toString();
-  public randomPin = () => randomInt(1000, 9999).toString();
+  public randomOtp = () => this.integer(100000, this.isSeeded()?1000000:999999).toString();
+  public randomPin = () => this.integer(1000, this.isSeeded()?10000:9999).toString();
   public randomToken = () =>
-    randomBytes(32).toString("base64").substring(0, 24);
+    this.bytes(32).toString("base64").substring(0, 24);
 
   public randomCountry = () => {
     const countryObj = this.pickRandom(geographyData.locations);
@@ -172,9 +213,9 @@ export class DataGenerators {
     const stateObj = this.pickRandom(countryObj.states);
     return this.pickRandom(stateObj.cities);
   };
-  public randomStreet = () => `${randomInt(1, 99)} Admiralty Way`;
+  public randomStreet = () => `${this.integer(1, this.isSeeded()?100:99)} Admiralty Way`;
   public randomAddress = () => `${this.randomStreet()}, ${this.randomCity()}`;
-  public randomZipCode = () => randomInt(10000, 99999).toString();
+  public randomZipCode = () => this.integer(10000, this.isSeeded()?100000:99999).toString();
 
   private generatePair(type: string): string {
     const countryObj = this.pickRandom(geographyData.locations);
@@ -220,7 +261,7 @@ export class DataGenerators {
   public randomCompany = () => this.pickRandom(commerceData.companies);
   public randomCurrency = () => this.pickRandom(commerceData.currencies);
   public randomAmount = () => {
-    return (Math.random() * 10000).toFixed(2);
+    return (this.isSeeded()?this.integer(0,1000000)/100:this.fraction() * 10000).toFixed(2);
   };
   public randomTransactionId = () =>
     `TXN-${this.randomAlphaNumeric().toUpperCase()}`;

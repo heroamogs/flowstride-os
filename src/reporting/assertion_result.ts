@@ -6,7 +6,7 @@ export interface AssertionCheck {
 }
 export interface AssertionResult {
   command: string; target: string; status: 'passed' | 'failed' | 'running' | 'not_evaluated'; checks: AssertionCheck[];
-  timeout?: number; elapsed?: number; reason?: string;
+  timeout?: number; elapsed?: number; reason?: string; message?: string;
   sourceFile?: string; sourceLine?: number; profile?: string;
 }
 export type AssertionReporter = (result: AssertionResult) => void;
@@ -26,6 +26,7 @@ export function assertionCheck(key: string, label: string, matched: boolean, exp
 }
 export function assertionText(result: AssertionResult): string {
   const lines = [`${result.status === 'passed' ? '✔' : result.status === 'not_evaluated' ? '○' : result.status === 'running' ? '◌' : '✖'} flow.${result.command}`];
+  if (result.message) lines.push('  Message: ' + diagnosticValue(result.message));
   const visit = (check: AssertionCheck, depth: number) => {
     const prefix = '  '.repeat(depth);
     lines.push(`${prefix}${check.status === 'passed' ? '✔' : check.status === 'failed' ? '✖' : '○'} ${diagnosticValue(check.label)}${check.status === 'not_evaluated' ? ' — Not evaluated' : ''}`);
@@ -75,8 +76,10 @@ export function commandLabel(action: string, payload: any): string {
 }
 
 export function unexecutedAssertion(action: string, payload: any, reason = 'A previous required step failed.'): AssertionResult | undefined {
-  if (action !== 'native' || !['assert.that','network.expect','download.expect','stub.expect','a11y.scan','a11y.match','a11y.snapshot'].includes(payload?.pluginMethod)) return;
+  if (action !== 'native' || !['assert.that','assert.value','dialog.expect','network.expect','download.expect','stub.expect','a11y.scan','a11y.match','a11y.snapshot','api.expectSchema','api.poll','console.expect','channel.expect','visual.match'].includes(payload?.pluginMethod)) return;
   const data = payload.data && typeof payload.data === 'object' ? payload.data : {};
-  const fields = payload.pluginMethod === 'assert.that' ? ['role','name','selector','condition'] : Object.keys(data).filter(key=>!['timeout','name'].includes(key));
-  return { command:payload.pluginMethod,target:payload.pluginMethod,status:'not_evaluated',reason,checks:fields.slice(0,100).map(key=>({key,label:key+': '+diagnosticValue(data[key]),status:'not_evaluated',reason})) };
+  if (['console.expect','channel.expect','visual.match'].includes(payload.pluginMethod)) return { command:payload.pluginMethod, target:payload.pluginMethod, status:'not_evaluated', reason, checks:[] };
+  if (payload.pluginMethod.startsWith('api.')) return { command:payload.pluginMethod, target:'API response body', status:'not_evaluated', reason, checks:[] };
+  const fields = payload.pluginMethod === 'assert.that' ? ['target','role','name','selector','condition'].filter(key=>key in data) : Object.keys(data).filter(key=>!['timeout','name'].includes(key));
+  return { command:payload.pluginMethod,target:payload.pluginMethod,status:'not_evaluated',reason,...(typeof data.message==='string'?{message:diagnosticValue(data.message)}:{}),checks:fields.slice(0,100).map(key=>({key,label:key+': '+diagnosticValue(data[key]),status:'not_evaluated',reason})) };
 }
