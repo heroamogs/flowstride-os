@@ -1,3 +1,5 @@
+import { executionPause, type ExecutionPause } from './utils/executionPause';
+import { aggregateStepStatus } from "./utils/executionStatus";
 import { replayTemplateFromLog } from "../../security/manualReplay";
 import { redactPayload, redactWorkerPayload } from "../../security/redaction";
 import type { AssertionResult } from '../../reporting/assertion_result';
@@ -42,10 +44,11 @@ export interface TestStep {
   description: string;
   command: string;
   commandLabel?: string;
+  userMessage?: string;
   sourceLine?: number;
   error?: string | null;
   assertion?: AssertionResult | null;
-  status: "running" | "pass" | "passed" | "success" | "failed" | "pending";
+  status: "running" | "pass" | "passed" | "success" | "failed" | "pending" | "skipped" | "not_tested" | "interrupted" | "cancelled" | "blocked" | "unknown";
   screenshot?: string;
   profile?: string;
   attempt?: number;
@@ -56,13 +59,16 @@ export interface TestStep {
 export interface TestScenario {
   fileName: string;
   name: string;
-  status: "running" | "pass" | "passed" | "success" | "failed" | "pending";
+  status: "running" | "pass" | "passed" | "success" | "failed" | "pending" | "skipped";
   steps: TestStep[];
 }
 
 interface AppState {
   browserInfo: Record<string, { engine: string; version: string; headless: boolean }>;
   setBrowserInfo: (fileName: string, info: { engine: string; version: string; headless: boolean }) => void;
+  pendingPauses: Record<string, ExecutionPause>;
+  pauseExecution: (payload: unknown) => void;
+  resumeExecution: (id: string) => void;
   isRunning: boolean;
   runStatus: string;
   failFile: (fileName: string, error: string) => void;
@@ -110,7 +116,7 @@ interface AppState {
     status: string,
     screenshot?: string,
     fileName?: string,
-    metadata?: { attempt?: number; profile?: string; domSnapshot?: string; assertion?: AssertionResult | null; error?: string | null; commandLabel?: string; sourceLine?: number },
+    metadata?: { attempt?: number; profile?: string; domSnapshot?: string; assertion?: AssertionResult | null; error?: string | null; commandLabel?: string; userMessage?: string; sourceLine?: number },
   ) => void;
   addNetworkLog: (payload: any) => void;
   addAssertion: (payload: any) => void;
@@ -121,12 +127,24 @@ interface AppState {
 }
 
 export const useFlowStore = create<AppState>((set) => ({
+  pendingPauses: {},
+  pauseExecution: payload => set(state => {
+    const pause = executionPause(redactWorkerPayload('EXECUTION_PAUSED', payload, []));
+    if (!pause) return state;
+    return { pendingPauses: { ...state.pendingPauses, [pause.id]: pause }, isRunning: true };
+  }),
+  resumeExecution: id => set(state => {
+    if (!Object.hasOwn(state.pendingPauses, id)) return state;
+    const pendingPauses = { ...state.pendingPauses };
+    delete pendingPauses[id];
+    return { pendingPauses };
+  }),
   browserInfo: {},
   setBrowserInfo: (fileName, info) => set((state) => ({ activeTestFile: state.activeTestFile || fileName, browserInfo: { ...state.browserInfo, [fileName]: info } })),
   isRunning: false,
   runStatus: "idle",
   failFile: (fileName, error) => set(state => ({activeTestFile:state.activeTestFile || fileName, runStatus:"failed", testScenarios:[...state.testScenarios.filter(s=>s.fileName!==fileName || s.name!=="File error"),{fileName,name:"File error",status:"failed",steps:[{id:"file-error",type:"ERROR",description:"File could not complete",command:"parse / execution",status:"failed",error}]}]})),
-  scenarioResult: payload => set(state => ({testScenarios:state.testScenarios.map(s=>s.fileName===payload.fileName && s.name===payload.scenario ? {...s,status:payload.status==='passed'?'pass':'failed'} : s)})),
+  scenarioResult: payload => set(state => ({testScenarios:state.testScenarios.map(s=>s.fileName===payload.fileName && s.name===payload.scenario ? {...s,status:payload.status==='skipped'?'skipped':payload.status==='passed'?'pass':'failed'} : s)})),
   timer: 0,
   completedSteps: [],
   activeStepId: null,
@@ -205,6 +223,7 @@ export const useFlowStore = create<AppState>((set) => ({
 
   startExecution: () =>
     set({
+      pendingPauses: {},
       isRunning: true,
       runStatus: "running",
       timer: 0,
@@ -235,16 +254,15 @@ export const useFlowStore = create<AppState>((set) => ({
         let finalStatus = sc.status;
         if (sc.status === "running") {
           const hasFailed = finalizedSteps.some((s) => s.status === "failed");
-          const allPassed = finalizedSteps.length > 0 && finalizedSteps.every((s) =>
-            ["pass", "passed", "success"].includes(s.status),
-          );
+          const allPassed = aggregateStepStatus(finalizedSteps) === "passed";
           finalStatus = hasFailed ? "failed" : allPassed ? "pass" : "failed";
         }
         return { ...sc, status: finalStatus, steps: finalizedSteps };
       });
       return {
+        pendingPauses: {},
         isRunning: false,
-        runStatus: status === "aborted" || status === "interrupted" ? "interrupted" : status === "failed" || finalizedScenarios.some(s=>s.status==="failed") ? "failed" : status === "success" || finalizedScenarios.length > 0 ? "passed" : "incomplete",
+        runStatus: status === "aborted" || status === "interrupted" ? "interrupted" : status === "failed" || finalizedScenarios.some(s=>s.status==="failed") ? "failed" : finalizedScenarios.length && finalizedScenarios.every(s => s.status === "skipped") ? "skipped" : status === "success" || finalizedScenarios.length > 0 ? "passed" : "incomplete",
         activeStepId: restoredStepId({ ...state, isRunning: false, testScenarios: finalizedScenarios }, state.activeTestFile),
         testScenarios: finalizedScenarios,
       };
@@ -322,7 +340,7 @@ export const useFlowStore = create<AppState>((set) => ({
         if ((step.attempt || 1) <= (previous.attempt || 1)) return state;
         const steps = [...targetScenario.steps];
         steps[existingStepIndex] = { ...previous, status:step.status || 'running', attempt:step.attempt,
-          profile:step.profile || previous.profile, error:null, assertion:null, screenshot:undefined, domSnapshot:undefined };
+          profile:step.profile || previous.profile, userMessage:typeof step.userMessage === 'string' ? redactPayload(step.userMessage) : undefined, error:null, assertion:null, screenshot:undefined, domSnapshot:undefined };
         updatedScenarios[targetIndex] = {...targetScenario,status:'running',steps};
         return {testScenarios:updatedScenarios};
       }
@@ -333,7 +351,7 @@ export const useFlowStore = create<AppState>((set) => ({
         description: step.description || "",
         command: step.command || "",
         status: step.status || "running",
-        commandLabel:step.commandLabel, sourceLine:step.sourceLine, error:step.error, assertion:step.assertion,
+        commandLabel:step.commandLabel, userMessage: typeof step.userMessage === 'string' ? redactPayload(step.userMessage) : undefined, sourceLine:step.sourceLine, error:step.error, assertion:step.assertion,
         attempt:step.attempt, profile:step.profile,
       };
 
@@ -374,14 +392,12 @@ export const useFlowStore = create<AppState>((set) => ({
           domSnapshot: metadata?.domSnapshot || (attempt === (previous.attempt || 1) ? previous.domSnapshot : undefined),
           error: metadata?.error !== undefined ? metadata.error : attempt === (previous.attempt || 1) ? previous.error : null,
           assertion: metadata?.assertion !== undefined ? metadata.assertion : attempt === (previous.attempt || 1) ? previous.assertion : null,
-          commandLabel: metadata?.commandLabel || previous.commandLabel, sourceLine: metadata?.sourceLine || previous.sourceLine,
+          commandLabel: metadata?.commandLabel || previous.commandLabel, userMessage:typeof metadata?.userMessage === 'string' ? redactPayload(metadata.userMessage) : previous.userMessage, sourceLine: metadata?.sourceLine || previous.sourceLine,
           attemptHistory: history,
         };
 
         const hasFailed = updatedSteps.some((s) => s.status === "failed");
-        const allPassed = updatedSteps.every((s) =>
-          ["pass", "passed", "success"].includes(s.status),
-        );
+        const allPassed = aggregateStepStatus(updatedSteps) === "passed";
 
         let newScenarioStatus = scenario.status;
         if (hasFailed) newScenarioStatus = "failed";

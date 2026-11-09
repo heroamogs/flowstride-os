@@ -1,4 +1,5 @@
 import { validateEvidencePolicy } from '../security/evidence';
+import { workflowTags } from '../native/workflow_tags';
 import { parseShard } from './distribution';
 import { validateContextOptions } from '../native/validation';
 import { projectPath } from '../utils/projectPaths';
@@ -30,6 +31,8 @@ export function loadNativeConfig(root: string, options: Record<string, any>): Fl
   for (const key of ['trace','har','domSnapshots','failOnFlaky']) if (config[key] !== undefined && typeof config[key] !== 'boolean') throw new Error(`${key} must be boolean.`);
   validateEvidencePolicy(config.security?.evidence);
   parseShard(config.shard);
+  if (options.tag !== undefined) config.scenarioTags = workflowTags(options.tag);
+  else if (config.scenarioTags !== undefined) config.scenarioTags = workflowTags(config.scenarioTags);
   if (config.ci && config.updateBaselines) throw new Error('Baseline updates are not allowed in CI.');
   if (config.ci && input.cloudSync !== true) config.isCloudSyncActive = false;
   if (options.headless || config.ci) config.headless = true;

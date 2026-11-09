@@ -50,6 +50,14 @@ export const connectToRunner = () => {
           store.scenarioResult(data.payload);
           break;
 
+        case 'EXECUTION_PAUSED':
+          store.pauseExecution(data.payload);
+          break;
+
+        case 'EXECUTION_RESUMED':
+          store.resumeExecution(data.payload?.id);
+          break;
+
         case "RUN_COMPLETE":
           store.stopExecution(data.payload?.status);
           break;
@@ -89,7 +97,7 @@ export const connectToRunner = () => {
             status,
             data.payload.screenshot,
             data.payload.fileName,
-            { attempt: data.payload.attempt, profile: data.payload.profile, domSnapshot: data.payload.domSnapshot, assertion:data.payload.assertion, error:data.payload.error, commandLabel:data.payload.commandLabel, sourceLine:data.payload.sourceLine },
+            { attempt: data.payload.attempt, profile: data.payload.profile, domSnapshot: data.payload.domSnapshot, assertion:data.payload.assertion, error:data.payload.error, commandLabel:data.payload.commandLabel, userMessage:data.payload.userMessage, sourceLine:data.payload.sourceLine },
           );
           break;
 

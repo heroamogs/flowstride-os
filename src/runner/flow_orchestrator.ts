@@ -1,3 +1,4 @@
+import { isPauseId, PauseState } from './execution_control';
 import { DashboardBrowser } from '../native/dashboard';
 import { serveDOMSnapshot } from '../native/evidence';
 import { executionPlan } from '../ci/distribution';
@@ -16,7 +17,15 @@ import { PdfGenerator } from "../reporting/pdf_generator";
 export class FlowOrchestrator {
   public static readonly nativeBrowserProtocol = 2;
   public static readonly nativeAssertionProtocol = 1;
+  public static readonly nativeValueProtocol = 1;
   public static readonly nativeCIProtocol = 1;
+  public static readonly nativeControlProtocol = 1;
+  public static readonly nativeInteractionProtocol = 1;
+  public static readonly nativeBrowsingProtocol = 1;
+  public static readonly nativeDataProtocol = 1;
+  public static readonly nativeWorkflowProtocol = 1;
+  public static readonly nativeApiProtocol = 1;
+  public static readonly nativeApplicationEvidenceProtocol = 1;
   public readonly nativeEventProtocol = 1;
   private wss: WebSocketServer | null = null;
   private httpServer: http.Server | null = null;
@@ -28,6 +37,8 @@ export class FlowOrchestrator {
   private dashboardBrowser = new DashboardBrowser();
   private closing = false;
   private browserInfoByFile = new Map<string, any>();
+  private isExecuting = false;
+  private pendingPauses = new Map<string, { payload: PauseState; owner?: never }>();
 
   constructor(
     private worker: FlowWorker,
@@ -40,7 +51,24 @@ export class FlowOrchestrator {
     });
   }
 
+  private resumeExecution(pauseId: unknown): boolean {
+    if (!isPauseId(pauseId)) return false;
+    const pause = this.pendingPauses.get(pauseId);
+    if (!pause || !this.isExecuting) return false;
+    return this.worker.resumePause(pauseId);
+  }
+
   private forwardToDashboard(type: string, payload: any) {
+    if (type === 'EXECUTION_PAUSED') {
+      if (!isPauseId(payload?.id) || this.pendingPauses.has(payload.id)) return;
+      this.pendingPauses.set(payload.id, { payload: { ...payload } });
+    }
+    if (type === 'EXECUTION_RESUMED') {
+      const pause = this.pendingPauses.get(payload?.id);
+      if (!pause) return;
+      this.pendingPauses.delete(payload.id);
+    }
+    if (type === 'SUITE_START' || type === 'RUN_COMPLETE') this.pendingPauses.clear();
     if (type === 'BROWSER_INFO') this.browserInfoByFile.set(payload.fileName, payload);
     if (type === 'SUITE_START') this.browserInfoByFile.clear();
     this.config?.onRunEvent?.({ type, payload });
@@ -52,9 +80,36 @@ export class FlowOrchestrator {
     }
   }
 
+  private activeExecution?: Promise<boolean>;
+
+  private async stopDashboardRun(): Promise<void> {
+    this.abort();
+    const execution = this.activeExecution;
+    await this.worker.shutdown();
+    if (!execution) return;
+    await Promise.race([
+      execution.catch(() => false),
+      new Promise<void>(resolve => setTimeout(resolve, 5500).unref()),
+    ]);
+  }
+
   private async executeTestRun(targetPath: string) {
+    if (this.isExecuting) return false;
+    this.isExecuting = true;
+    try {
+      this.activeExecution = this.executeCurrentRun(targetPath);
+      return await this.activeExecution;
+    } finally {
+      this.activeExecution = undefined;
+      this.isExecuting = false;
+      this.pendingPauses.clear();
+    }
+  }
+
+  private async executeCurrentRun(targetPath: string) {
     this.forwardToDashboard("SUITE_START", {});
 
+    if(this.config && !this.config.ci) delete this.config.nativeDataManifest;
     const filesToProcess = executionPlan(targetPath, this.config).files;
     if (this.config) this.config.flowRoot = fs.statSync(targetPath).isDirectory() ? targetPath : path.dirname(targetPath);
 
@@ -244,13 +299,17 @@ export class FlowOrchestrator {
 
       this.wss.on("connection", (ws) => {
         for (const payload of this.browserInfoByFile.values()) ws.send(JSON.stringify({ type: 'BROWSER_INFO', payload }));
+        for (const { payload } of this.pendingPauses.values()) ws.send(JSON.stringify({ type: 'EXECUTION_PAUSED', payload }));
         if (this.disconnectTimer) {
           clearTimeout(this.disconnectTimer);
           this.disconnectTimer = null;
         }
 
         ws.on("message", async (message) => {
-          const data = JSON.parse(message.toString());
+          let data: any;
+          try { data = JSON.parse(message.toString()); } catch { return; }
+          if (!data || typeof data.type !== 'string') return;
+          if (data.type === 'RESUME_EXECUTION') { this.resumeExecution(data.payload?.pauseId); return; }
 
           if (data.type === "EXPORT_PDF_REQ") {
             let scenariosToExport = data.payload || [];
@@ -261,6 +320,7 @@ export class FlowOrchestrator {
           } else if (data.type === "REPLAY_REQ") {
             await this.worker.handleReplayRequest(data.payload);
           } else if (data.type === "RERUN_REQ") {
+            if (this.isExecuting) return;
             const requestedFile = data.payload?.filePath;
             let specificTarget = targetPath;
 
@@ -282,8 +342,7 @@ export class FlowOrchestrator {
                 "\nReceived STOP signal from Dashboard. Halting execution...",
               ),
             );
-            this.worker.abort();
-            await this.worker.shutdown();
+            await this.stopDashboardRun();
             this.forwardToDashboard("RUN_COMPLETE", { status: "aborted" });
           }
         });
@@ -296,9 +355,8 @@ export class FlowOrchestrator {
                   "\n[Flowstride]: Dashboard disconnected. Shutting down framework...",
                 ),
               );
-              this.worker.abort();
               try {
-                await this.worker.shutdown();
+                await this.stopDashboardRun();
               } catch (e) {}
               this.wss?.close();
               this.httpServer?.close();
@@ -372,11 +430,13 @@ export class FlowOrchestrator {
   }
 
   public abort() {
+    this.pendingPauses.clear();
     this.worker.abort();
   }
 
   public async close() {
     this.closing = true;
+    this.abort();
     await this.dashboardBrowser.close();
     if (this.disconnectTimer) clearTimeout(this.disconnectTimer);
     this.wss?.clients.forEach(client => client.terminate());

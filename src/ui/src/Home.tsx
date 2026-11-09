@@ -1,3 +1,4 @@
+import { ExecutionPauses } from './components/ExecutionPauses';
 import { ResizableFlowPanel } from "./components/ResizableFlowPanel";
 import { DEFAULT_FLOW_PANEL_WIDTH } from "./utils/flowPanelSize";
 import { useState } from "react";
@@ -50,6 +51,7 @@ export default function Home() {
                 isRightPanelOpen={isRightPanelOpen}
                 onToggleRightPanel={() => setRightPanelOpen(!isRightPanelOpen)}
               />
+              <ExecutionPauses />
               <div
                 style={{ flex: 1, overflow: "hidden", position: "relative" }}
               >

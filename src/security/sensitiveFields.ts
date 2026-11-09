@@ -2,6 +2,7 @@ export const REDACTED = '[REDACTED]';
 
 export function isSensitiveField(key: string): boolean {
   const normalized = key.replace(/[-_\s]/g, '').toLowerCase();
+  if (normalized === 'prompttext' || normalized === 'defaultvalue') return true;
   if (normalized === 'emailverified' || normalized === 'isemailverified') return false;
   return /password|passcode|secret|token|authorization|cookie|api.?key|master.?key|otp|email|curlString|replayRequest|strippedDom/i.test(key);
 }

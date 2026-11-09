@@ -1,5 +1,5 @@
 import { runtimeFailure } from '../../reporting/runtime_failure';
-import { needsNativeBrowserProtocol } from '../../native/compatibility';
+import { needsNativeBrowserProtocol, needsNativeValueProtocol, needsNativeControlProtocol, needsNativeInteractionProtocol, needsNativeBrowsingProtocol, needsNativeDataProtocol, needsNativeWorkflowProtocol, needsNativeApiProtocol, needsNativeApplicationEvidenceProtocol } from '../../native/compatibility';
 import { projectPath } from '../../utils/projectPaths';
 import { loadNativeConfig, isCIEnvironment } from '../../ci/config';
 import { runNativeCI } from '../../ci/runtime';
@@ -144,6 +144,23 @@ export async function runAction(
       if (config.ci && proOrchModule.FlowOrchestrator.nativeCIProtocol !== 1) throw new Error('Installed Pro engine does not support native CI protocol 1; install the matching Pro candidate.');
       if (needsNativeBrowserProtocol(resolvedPath, config) && (proWorkerModule.FlowWorker.nativeBrowserProtocol !== 2 || proOrchModule.FlowOrchestrator.nativeBrowserProtocol !== 2)) throw new Error('Installed Cloud engine does not support these native browser capabilities. Install the matching Cloud archive; this run will use OS fallback.');
       if (needsNativeBrowserProtocol(resolvedPath, config) && (proWorkerModule.FlowWorker.nativeAssertionProtocol !== 1 || proOrchModule.FlowOrchestrator.nativeAssertionProtocol !== 1)) throw new Error('Installed Cloud engine predates structured assertion reporting; this run will use OS fallback. Install the matching Cloud archive to update.');
+      if (needsNativeValueProtocol(resolvedPath, config) && (proWorkerModule.FlowWorker.nativeValueProtocol !== 1 || proOrchModule.FlowOrchestrator.nativeValueProtocol !== 1)) throw new Error('Installed Cloud engine does not support these textual/value assertion or extraction capabilities; this run will use OS fallback. Install the matching Cloud archive to update.');
+      if (needsNativeControlProtocol(resolvedPath, config) && (proWorkerModule.FlowWorker.nativeControlProtocol !== 1 || proOrchModule.FlowOrchestrator.nativeControlProtocol !== 1)) throw new Error('Installed Cloud engine does not support these execution-control capabilities; this run will use OS fallback. Install the matching Cloud archive to update.');
+      if (needsNativeInteractionProtocol(resolvedPath, config) && (proWorkerModule.FlowWorker.nativeInteractionProtocol !== 1 || proOrchModule.FlowOrchestrator.nativeInteractionProtocol !== 1)) throw new Error('Installed Cloud engine does not support these browser-interaction capabilities; this run will use OS fallback. Install the matching Cloud archive to update.');
+      if (needsNativeBrowsingProtocol(resolvedPath, config) && (proWorkerModule.FlowWorker.nativeBrowsingProtocol !== 1 || proOrchModule.FlowOrchestrator.nativeBrowsingProtocol !== 1)) throw new Error('Installed Cloud engine does not support these tab/frame/dialog capabilities; this run will use OS fallback. Install the matching Cloud archive to update.');
+      if (needsNativeDataProtocol(resolvedPath,config) && (proWorkerModule.FlowWorker.nativeDataProtocol !== 1 || proOrchModule.FlowOrchestrator.nativeDataProtocol !== 1)) throw new Error('Installed Cloud engine does not support these files/test-data capabilities; this run will use OS fallback. Install the matching Cloud archive to update.');
+      if (needsNativeWorkflowProtocol(resolvedPath, config) &&
+          (proWorkerModule.FlowWorker.nativeWorkflowProtocol !== 1 || proOrchModule.FlowOrchestrator.nativeWorkflowProtocol !== 1)) {
+        throw new Error('Installed Cloud engine does not support these workflow capabilities. This run will use OS fallback.');
+      }
+      if ((proWorkerModule.FlowWorker.nativeApiProtocol !== 1 || proOrchModule.FlowOrchestrator.nativeApiProtocol !== 1) &&
+          needsNativeApiProtocol(resolvedPath, config)) {
+        throw new Error('Installed Cloud engine does not support these API or network route capabilities. This run will use OS fallback.');
+      }
+      if ((proWorkerModule.FlowWorker.nativeApplicationEvidenceProtocol !== 1 || proOrchModule.FlowOrchestrator.nativeApplicationEvidenceProtocol !== 1) &&
+          needsNativeApplicationEvidenceProtocol(resolvedPath, config)) {
+        throw new Error('Installed Cloud engine does not support these console, channel or visual capabilities. This run will use OS fallback.');
+      }
       ActiveFlowWorker = proWorkerModule.FlowWorker;
       ActiveFlowOrchestrator = proOrchModule.FlowOrchestrator;
       engineMode = "Enterprise (Pro)";
@@ -170,7 +187,7 @@ export async function runAction(
   if (isCI) {
     const result = await runNativeCI(worker, orchestrator, resolvedPath, config, engineMode);
     console.log(`[Flowstride]: ${result.status}; reports: ${config.artifactsDir}`);
-    process.exit(result.status === 'passed' ? 0 : result.status === 'interrupted' ? 130 : 1);
+    process.exit(['passed', 'skipped'].includes(result.status) ? 0 : result.status === 'interrupted' ? 130 : 1);
   }
 
   const previousRunEvent = config.onRunEvent;

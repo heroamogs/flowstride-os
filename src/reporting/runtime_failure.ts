@@ -11,12 +11,13 @@ export function commandSecrets(command: string, payload: any): string[] {
     if (typeof value !== 'object') return;
     seen.add(value);
     for (const [key,item] of Object.entries(value).slice(0,200)) {
-      if (/password|passcode|secret|token|authorization|cookie|api.?key|otp/i.test(key) && typeof item === 'string') secrets.push(item);
+      if (/password|passcode|secret|token|authorization|cookie|api.?key|otp|promptText|defaultValue/i.test(key) && typeof item === 'string') secrets.push(item);
       else visit(item,depth+1);
     }
   };
   visit(payload,0);
-  if (/^(?:flow\.)?(?:type|forceType|passcode)$/i.test(command) && typeof payload?.text === 'string') secrets.push(payload.text);
+  if (/^(?:flow\.)?(?:type|forceType|passcode|input\.type)$/i.test(command) && typeof payload?.text === 'string') secrets.push(payload.text);
+  if (payload?.pluginMethod === 'input.type' && typeof payload.data?.text === 'string') secrets.push(payload.data.text);
   return secrets;
 }
 export function runtimeFailure(command: string, payload: any, error: unknown, context: FailureContext): string {
@@ -24,8 +25,8 @@ export function runtimeFailure(command: string, payload: any, error: unknown, co
   const lines = [`Failed command: ${diagnosticValue(label)}`];
   if (context.file) lines.push(`Location: ${diagnosticValue(context.file)}${context.line ? ':' + context.line : ''}`);
   const input = payload?.data && typeof payload.data === 'object' ? payload.data : payload || {};
-  const fields = ['selector','role','name','text','url','path','file','filename','audioPath','sessionName','jsonPath','attribute','property','key','canvas','id','target'];
-  const targets = fields.filter(key => !(/^(?:flow\.)?(?:type|forceType|passcode)$/i.test(command) && key === 'text') && (['string','number'].includes(typeof input[key]) || key === 'selector' && input[key] && typeof input[key] === 'object')).map(key => `${key}: ${diagnosticValue(input[key])}`);
+  const fields = ['selector','role','name','text','url','path','file','filename','audioPath','sessionName','jsonPath','attribute','property','key','canvas','id','target','x','y'];
+  const targets = fields.filter(key => !(/^(?:flow\.)?(?:type|forceType|passcode|input\.type)$/i.test(command) && key === 'text') && (['string','number'].includes(typeof input[key]) || ['selector','target'].includes(key) && input[key] && typeof input[key] === 'object')).map(key => `${key}: ${diagnosticValue(input[key])}`);
   if (targets.length) lines.push('Target / resource: ' + targets.join('; '));
   if (context.profile) lines.push('Profile: ' + diagnosticValue(context.profile));
   if (context.timeout !== undefined) lines.push(`Timeout: ${context.timeout} ms${context.elapsed !== undefined ? '; elapsed: ' + context.elapsed + ' ms' : ''}`);

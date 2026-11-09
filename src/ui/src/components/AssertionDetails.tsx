@@ -14,6 +14,7 @@ export function AssertionDetails({ result, light = false }: { result?: Assertion
     {item.children?.map(check)}
   </div>;
   return <div data-assertion-result={result.status} style={{ whiteSpace:'pre-wrap', overflowWrap:'anywhere', fontFamily:'monospace', fontSize:11, textAlign:'left', color:light?'#334155':'#cbd5e1', padding:'6px 4px', minWidth:0 }}>
+    {result.message && <div>Message: {result.message}</div>}
     {result.checks.map(check)}
     {result.status === 'failed' && result.reason && <div>Reason: {result.reason}</div>}
     {result.timeout !== undefined && <div>Timeout: {result.timeout} ms; elapsed: {result.elapsed || 0} ms</div>}

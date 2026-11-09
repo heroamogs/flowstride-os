@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
+const { webkit } = require('playwright');
 const { WebAdapter } = require('../../dist/adapters/web/playwright');
 const { FlowWorker } = require('../../dist/runner/flow_worker');
 const { FlowOrchestrator } = require('../../dist/runner/flow_orchestrator');
@@ -16,7 +17,8 @@ const root = path.resolve(__dirname, '../..');
 const privateEngine = require('../../package.json').name === '@flowstride/pro';
 const cloud = process.env.FLOWSTRIDE_PRO_SOURCE;
 const engines = ['chromium', 'firefox', 'webkit'];
-const browserCache = require(path.join(path.dirname(require.resolve('playwright-core/package.json')), 'lib/server/registry/index.js')).registryDirectory;
+// Reuse the installed browser cache in child processes with an isolated HOME.
+const browserCache = path.dirname(path.dirname(webkit.executablePath()));
 
 async function fixture() {
   const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'flowstride-browser-')));

@@ -28,7 +28,7 @@ const name=names.find(value=>fs.existsSync(path.join(root,'node_modules',value,'
 assert(name,'The archive must install an engine package.');
 const engine=path.join(root,'node_modules',name);
 const packageJSON=JSON.parse(fs.readFileSync(path.join(engine,'package.json')));
-assert.equal(packageJSON.dependencies.playwright,'1.59.1');
+assert.equal(packageJSON.dependencies.playwright,'1.65.0');
 fs.cpSync(path.join(engine,'examples/native-game'),root,{recursive:true});
 if(name!=='flowstride'){
  const server=path.join(root,'server.mjs');fs.writeFileSync(server,fs.readFileSync(server,'utf8').replace("from 'flowstride/","from '@flowstride/pro/"));

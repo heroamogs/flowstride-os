@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { FlowstrideConfig } from '../types';
 import { projectPath } from '../utils/projectPaths';
 import { protectPrivatePath } from './privateState';
@@ -33,18 +34,40 @@ export function prepareEvidenceFile(config: Pick<FlowstrideConfig, 'projectRoot'
   }
   return file;
 }
+function evidenceFileSnapshot(file: string) {
+  const info = fs.lstatSync(file, { bigint: true });
+  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1n) {
+    throw new Error('Evidence file changed or became unsafe before writing.');
+  }
+  return info;
+}
 export function writeEvidence(config: Pick<FlowstrideConfig, 'projectRoot'> | undefined, target: string, data: string | Buffer) {
   const file = prepareEvidenceFile(config, target);
-  const expected = fs.lstatSync(file);
-  // Windows/libuv can reject O_TRUNC without O_CREAT. Open the existing file
-  // without creating it, validate its handle, then truncate that exact handle.
-  const fd = fs.openSync(file, fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW || 0));
+  const original = evidenceFileSnapshot(file);
+  const temporary = path.join(path.dirname(file), `.evidence-${randomUUID()}.tmp`);
+  const descriptor = fs.openSync(temporary, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0), 0o600);
   try {
-    const opened = fs.fstatSync(fd);
-    if (!opened.isFile() || opened.nlink !== 1 || opened.dev !== expected.dev || opened.ino !== expected.ino) throw new Error('Evidence file changed or became unsafe before writing.');
-    fs.ftruncateSync(fd, 0); fs.writeFileSync(fd, data);
-  } finally { fs.closeSync(fd); }
-  protectPrivatePath(file, false); return file;
+    let staged: fs.BigIntStats;
+    try {
+      protectPrivatePath(temporary, false);
+      staged = evidenceFileSnapshot(temporary);
+      fs.writeFileSync(descriptor, data);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    projectPath(config?.projectRoot || process.cwd(), file);
+    const current = evidenceFileSnapshot(file);
+    const ready = evidenceFileSnapshot(temporary);
+    if (current.dev !== original.dev || current.ino !== original.ino || ready.dev !== staged.dev || ready.ino !== staged.ino) {
+      throw new Error('Evidence file changed or became unsafe before writing.');
+    }
+    // Replace the checked directory entry. A link introduced during the rename
+    // cannot redirect writes through the destination to another file.
+    fs.renameSync(temporary, file);
+    return file;
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
 }
 export function protectEvidenceTree(config: Pick<FlowstrideConfig, 'projectRoot'> | undefined, directory: string) {
   const root = evidenceDirectory(config, directory);
