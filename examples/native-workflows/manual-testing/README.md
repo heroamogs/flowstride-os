@@ -1,6 +1,6 @@
 # Manual design, execution and saved results
 
-The Manual Workspace lets you describe steps and expected results visually, perform those actions in your application, record outcomes and reopen a saved run. It is available in OS and Cloud. A human decides whether each manual step matches its expected result.
+The Manual Workspace lets you describe steps and expected results visually, perform those actions in your application, record outcomes and reopen a saved run. It is available in both the open-source engine and the Cloud engine. A human decides whether each manual step matches its expected result.
 
 Complete the [shared setup](../README.md) and leave the local demo app running. The default application page for this chapter is `http://127.0.0.1:4107/profile`. If you changed the demo port, use the printed server URL and update the design instructions to match.
 
@@ -50,7 +50,7 @@ If nodes extend beyond the viewport, pan with the Hand tool or use the zoom/rece
 
 | Engine | Button in Execution Mode |
 | --- | --- |
-| OS | **Save** |
+| Open-source engine | **Save** |
 | Cloud | **Submit Run** |
 
 Wait for confirmation. The design remains under `manual_flows/templates`; the new run is stored separately under `manual_flows/runs`. A browser file download is not proof that a run was persisted: confirm the saved record in **Runs**.
@@ -61,7 +61,7 @@ The passing exercise should show three Passed steps and a PASS run summary. Keep
 
 Open **Runs**, locate the saved record and select it. Check its saved flow name, step results and canvas. Review historical records as evidence of that execution; return to the design for a fresh run. Cloud presents a vaulted historical record with its editing controls locked.
 
-Manual results are local records by default in OS. Cloud can synchronize manual results when valid Cloud credentials are configured. Check delivery status separately and avoid including real personal data in example evidence.
+The open-source engine saves manual results locally. Cloud can synchronize manual results when valid Cloud credentials are configured. Check delivery status separately and avoid including real personal data in example evidence.
 
 ## 5. Practice a failure and skipped work
 

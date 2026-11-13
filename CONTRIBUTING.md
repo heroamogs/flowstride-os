@@ -1,6 +1,6 @@
-# Contributing to Flowstride OS
+# Contributing to Flowstride
 
-First off, thank you for considering contributing to Flowstride OS! It is people like you that make open-source software such a powerful tool.
+First off, thank you for considering contributing to Flowstride! It is people like you that make open-source software such a powerful tool.
 
 Whether you are helping us fix bugs, improve the documentation, or propose new features, we appreciate your time and effort. This document outlines the guidelines and steps for contributing to the framework.
 
@@ -8,7 +8,7 @@ Whether you are helping us fix bugs, improve the documentation, or propose new f
 
 ## 1. Ways to Contribute
 
-There are many ways you can contribute to Flowstride OS:
+There are many ways you can contribute to Flowstride:
 
 - **Report Bugs:** Find a bug? Open an issue to let us know.
 - **Suggest Features:** Have an idea for a new `.flow` command or a dashboard enhancement? Open a feature request.
@@ -23,7 +23,7 @@ A good bug report saves everyone time. If you find a bug, please check the exist
 
 If it is a new bug, please open an issue and include:
 
-1. **Flowstride Version:** The exact version of Flowstride OS you are running.
+1. **Flowstride Version:** The exact version of Flowstride you are running.
 2. **Environment:** Your Operating System and Node.js version.
 3. **The `.flow` Script:** Provide a minimal, reproducible `.flow` file that triggers the bug.
 4. **Expected vs. Actual Behavior:** What did you expect to happen, and what actually happened?
@@ -35,7 +35,7 @@ _Note: If your bug is a security vulnerability, please refer to our `SECURITY.md
 
 ## 3. Local Development Setup
 
-If you want to contribute code to Flowstride OS, you will need to set up the project locally. Flowstride consists of a Node.js backend (the CLI/Runner) and a React frontend (the Dashboard).
+If you want to contribute code to Flowstride, you will need to set up the project locally. Flowstride consists of a Node.js backend (the CLI/Runner) and a React frontend (the Dashboard).
 
 **Prerequisites:**
 
@@ -46,8 +46,8 @@ If you want to contribute code to Flowstride OS, you will need to set up the pro
 
 1. Fork the repository on GitHub.
 2. Clone your forked repository to your local machine:
-   git clone https://github.com/YOUR-USERNAME/flowstride-os.git
-   cd flowstride-os
+   git clone https://github.com/YOUR-USERNAME/flowstride.git
+   cd flowstride
 3. Install dependencies for the core runner:
    npm install
 4. Install dependencies for the React Dashboard:
@@ -61,7 +61,7 @@ If you want to contribute code to Flowstride OS, you will need to set up the pro
 
 ## 4. Understanding the Architecture
 
-Before making changes, it is helpful to understand how Flowstride OS is structured:
+Before making changes, it is helpful to understand how Flowstride is structured:
 
 - **`src/parser/`**: The Lexer and Parser. This reads the custom `.flow` syntax and converts it into an Abstract Syntax Tree (AST) of Scenarios and Steps.
 - **`src/adapters/web/`**: The Playwright wrapper. This translates `.flow` UI commands (like `flow.click`) into actual browser automation instructions.
@@ -115,4 +115,4 @@ Once you submit a PR, a core maintainer will review your code.
 - Please be responsive to feedback. If a PR sits stale with requested changes for more than 14 days, it may be closed.
 - Once approved, a maintainer will merge your code into the main branch.
 
-Thank you for contributing to Flowstride OS!
+Thank you for contributing to Flowstride!

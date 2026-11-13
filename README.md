@@ -1,23 +1,25 @@
 # Flowstride
 
-Flowstride OS is an open source framework for browser, API and manual testing. Write readable `.flow` tests, inspect execution in the local dashboard, or run headlessly in CI.
+Flowstride is an open-source framework for browser, API and manual testing. Write readable `.flow` tests, inspect execution in the local dashboard, or run headlessly in CI.
 
 [Documentation](https://docs.flowstride.io/) · [Flowstride Cloud](https://cloud.flowstride.io/)
 
 ## Requirements
 
 - Node.js 22.12 or newer.
-- A matching Chromium, Firefox or WebKit installation for browser tests. Chromium is the default; audio-file microphone injection requires Chromium.
+- A matching Chromium, Firefox or WebKit installation for browser tests. Chromium is the default. Audio-file microphone injection requires Chromium.
 
 ## Get started
 
-Install Flowstride in your project:
+Install Flowstride in your project.
 
 ```sh
 npm install --save-dev flowstride
 npx flowstride init
 npx flowstride run flows/example.flow
 ```
+
+If you use VS Code, open **Extensions**, search for **Flowstride Automation**, and select **Install**. The extension adds syntax highlighting, formatting, validation, and snippets for `.flow` files. [Flowstride Automation on the Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=flowstride.flowstride-vscode)
 
 `init` creates the project folders and an example flow, and installs Chromium. You can also install the matching browser explicitly:
 
@@ -82,7 +84,7 @@ Flowstride Cloud users authenticate through the private installation channel:
 npx flowstride login
 ```
 
-The OS CLI selects a compatible, authorized Cloud engine when available and falls back to OS when the Cloud engine cannot be used. The Cloud engine is distributed privately.
+The Flowstride CLI selects a compatible, authorized Cloud engine when available and falls back to the open-source engine when the Cloud engine cannot be used. The Cloud engine is distributed privately.
 
 ## Test data and artifacts
 

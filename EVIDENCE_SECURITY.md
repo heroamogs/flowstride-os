@@ -1,4 +1,4 @@
-# Evidence privacy in OS and Cloud
+# Evidence privacy in Flowstride and Flowstride Cloud
 
 Test evidence is application data. A passing test is not proof that its screenshots, recordings or diagnostic archives are safe to share.
 

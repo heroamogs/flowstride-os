@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-We take the security of Flowstride OS and our users very seriously.
+We take the security of Flowstride and our users very seriously.
 
 If you discover a security vulnerability, we kindly ask that you **do not** report it by opening a public GitHub Issue. Instead, please practice responsible disclosure by contacting us privately.
 
@@ -14,7 +14,7 @@ To help us resolve the issue as quickly as possible, please include the followin
 
 - A description of the vulnerability and its potential impact.
 - The steps required to reproduce the issue.
-- The version of Flowstride OS and Node.js you are using.
+- The version of Flowstride and Node.js you are using.
 - Any relevant logs, screenshots, or code snippets.
 
 ### Our Response Process

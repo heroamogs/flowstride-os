@@ -40,7 +40,7 @@ BASE_URL=http://127.0.0.1:4107
 EXAMPLE_LABEL="Workflow fixture"
 ```
 
-OS and Cloud load `.env` automatically for a run. `BASE_URL` supplies the base for relative browser and API URLs. You can alternatively set `baseUrl` in `flowstride.config.json`; `BASE_URL` takes precedence.
+Both the open-source engine and the Cloud engine load `.env` automatically for a run. `BASE_URL` supplies the base for relative browser and API URLs. You can alternatively set `baseUrl` in `flowstride.config.json`; `BASE_URL` takes precedence.
 
 For example, `flow.open "/orders";` and `flow.post "/api/users" ...` use the same configured application. String values inside `.flow` commands can use `{{env.NAME}}`. General environment-template substitution is not performed throughout the JSON configuration file.
 
