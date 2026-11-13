@@ -4,7 +4,7 @@ Flowstride can interact with a table through readable controls, exact selectors 
 
 | Requirement | Value |
 | --- | --- |
-| Engine | OS or Cloud |
+| Engine | Open-source or Cloud |
 | Browser | Chromium, Firefox or WebKit |
 | Application | Shared local demo |
 | Cloud account | Optional |

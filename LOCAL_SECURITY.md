@@ -1,6 +1,6 @@
 # Local state and Cloud installation security
 
-These controls apply to both OS and the Cloud engine. They preserve the existing JSON credentials, value vault and saved-browser-session formats.
+These controls apply to both the open-source engine and the Cloud engine. They preserve the existing JSON credentials, value vault and saved-browser-session formats.
 
 ## Credentials and saved state
 
@@ -16,7 +16,7 @@ These are filesystem access controls, not encryption at rest or a sandbox for un
 
 The existing Cloud `reset --values`, `reset --sessions` and `run --fresh` paths validate actual filesystem components before deletion. Both requested targets are checked before anything is removed. Unsafe links or deletion failures stop the operation and produce a failing exit code.
 
-`--values` targets `.flowstride/vault.json`; `--sessions` targets `.flowstride/sessions`. Credentials and other project files are preserved. Reset removes files; it is not forensic erasure of disk snapshots or backups. OS does not gain a new reset subcommand from these changes.
+`--values` targets `.flowstride/vault.json`; `--sessions` targets `.flowstride/sessions`. Credentials and other project files are preserved. Reset removes files; it is not forensic erasure of disk snapshots or backups.
 
 ## Cloud transport
 

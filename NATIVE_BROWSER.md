@@ -2,9 +2,9 @@
 
 For API/UI composition, email OTP, iframe examples, audio-to-text, tables, variables and manual testing, start with [Core Flowstride workflows](NATIVE_WORKFLOWS.md).
 
-OS and Cloud support these commands directly in `.flow` files. Existing commands, plugins and saved sessions continue to work. Use `flow.<area>.<action>` followed by a JSON object. Unknown actions and options fail explicitly.
+The open-source and Cloud engines support these commands directly in `.flow` files. Existing commands, plugins and saved sessions continue to work. Use `flow.<area>.<action>` followed by a JSON object. Unknown actions and options fail explicitly.
 
-Keep both engine installations current when using these features. If an installed Cloud engine lacks the required capability protocol, the public runner warns and uses OS fallback for the run. Existing commands can still use an older compatible Cloud engine; Cloud-only services require a compatible Cloud installation.
+Keep both engine installations current when using these features. If an installed Cloud engine lacks the required capability protocol, the public runner warns and uses the open-source engine for the run. Existing commands can still use an older compatible Cloud engine; Cloud-only services require a compatible Cloud installation.
 
 ## Separate users in one test
 

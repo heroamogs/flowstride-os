@@ -4,7 +4,7 @@ Flowstride can generate test data, extract values from APIs or pages, reuse them
 
 | Requirement | Value |
 | --- | --- |
-| Engine | OS or Cloud |
+| Engine | Open-source or Cloud |
 | Browser | Chromium, Firefox or WebKit |
 | Application | Shared local demo |
 | Cloud account | Optional |

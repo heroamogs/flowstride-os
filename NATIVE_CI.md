@@ -14,7 +14,7 @@ npx flowstride run flows --ci
 
 In CI, use `npm ci` before browser installation and test execution. Browser installation uses the Chromium version matching the installed Flowstride engine by default. See [native browser workflows](NATIVE_BROWSER.md) for Firefox, WebKit and browser configuration. Linux runners may require system browser dependencies; the generated GitHub workflow handles installation for its runner.
 
-Cloud users authenticate using `npx flowstride login`. In CI, supply the developer token through the `FLOWSTRIDE_TOKEN` secret, never in committed files. Install project dependencies before login, then install the matching browser and run the tests. The OS CLI uses compatible, authorized Cloud engine installations and falls back to OS when the Cloud engine is unavailable.
+Cloud users authenticate using `npx flowstride login`. In CI, supply the developer token through the `FLOWSTRIDE_TOKEN` secret, never in committed files. Install project dependencies before login, then install the matching browser and run the tests. The Flowstride CLI uses compatible, authorized Cloud engine installations and falls back to the open-source engine when the Cloud engine is unavailable.
 
 Generate a GitHub Actions workflow explicitly:
 

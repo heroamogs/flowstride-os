@@ -4,7 +4,7 @@ Flowstride supplies prerecorded audio to the browser's microphone, drives record
 
 | Requirement | Value |
 | --- | --- |
-| Engine | OS or Cloud |
+| Engine | Open-source or Cloud |
 | Browser | Chromium for audio-file microphone injection |
 | Local demo | Included PCM WAV, real microphone capture and a simulated transcript response |
 | Real transcription | Your own authorized recording application, service and spoken WAV fixture |

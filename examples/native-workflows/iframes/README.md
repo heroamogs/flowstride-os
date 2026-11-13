@@ -4,7 +4,7 @@ Flowstride can discover a readable control in a child frame and can scope native
 
 | Requirement | Value |
 | --- | --- |
-| Engine | OS or Cloud |
+| Engine | Open-source or Cloud |
 | Browser | Chromium, Firefox or WebKit |
 | Application | Shared local demo |
 | Cloud account | Optional |

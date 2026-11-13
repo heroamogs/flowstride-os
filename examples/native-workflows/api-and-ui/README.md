@@ -4,7 +4,7 @@ One `.flow` scenario can create data through an API, extract the response, inter
 
 | Requirement | Value |
 | --- | --- |
-| Engine | OS or Cloud |
+| Engine | Open-source or Cloud |
 | Browser | Chromium, Firefox or WebKit |
 | Application | Shared local demo, running in another terminal |
 | Cloud account | Optional for this example |
